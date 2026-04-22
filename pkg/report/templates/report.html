@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1a1a1a;max-width:900px;margin:0 auto;padding:20px;">
+
+<h1 style="font-size:24px;font-weight:600;border-bottom:2px solid #e1e4e8;padding-bottom:8px;">Docker Compose Security &amp; Version Report</h1>
+<p style="color:#656d76;font-size:13px;">Generated: {{.Generated}}</p>
+
+<h2 style="font-size:20px;font-weight:600;margin-top:24px;color:#24292f;">Summary</h2>
+<table style="border-collapse:collapse;width:100%;margin-bottom:16px;font-size:14px;">
+  <tr>
+    <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Metric</th>
+    <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Count</th>
+  </tr>
+  <tr>
+    <td style="border:1px solid #d0d7de;padding:8px 12px;">Projects scanned</td>
+    <td style="border:1px solid #d0d7de;padding:8px 12px;">{{.ProjectCount}}</td>
+  </tr>
+  <tr>
+    <td style="border:1px solid #d0d7de;padding:8px 12px;background:#f6f8fa;">Images found</td>
+    <td style="border:1px solid #d0d7de;padding:8px 12px;background:#f6f8fa;">{{.ImageCount}}</td>
+  </tr>
+  <tr>
+    <td style="border:1px solid #d0d7de;padding:8px 12px;">Using <code>latest</code> tag</td>
+    <td style="border:1px solid #d0d7de;padding:8px 12px;">
+      {{if gt .LatestCount 0}}<span style="color:#d1242f;font-weight:600;">{{.LatestCount}} ⚠️</span>{{else}}{{.LatestCount}}{{end}}
+    </td>
+  </tr>
+  <tr>
+    <td style="border:1px solid #d0d7de;padding:8px 12px;background:#f6f8fa;">Security issues</td>
+    <td style="border:1px solid #d0d7de;padding:8px 12px;background:#f6f8fa;">
+      {{if gt .SecurityCount 0}}<span style="color:#d1242f;font-weight:600;">{{.SecurityCount}} ⚠️</span>{{else}}{{.SecurityCount}}{{end}}
+    </td>
+  </tr>
+</table>
+
+<h2 style="font-size:20px;font-weight:600;margin-top:24px;color:#24292f;">Images</h2>
+<table style="border-collapse:collapse;width:100%;margin-bottom:16px;font-size:14px;">
+  <tr>
+    <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Status</th>
+    <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Project</th>
+    <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Service</th>
+    <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Image</th>
+    <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Tag</th>
+    <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Recommended</th>
+  </tr>
+  {{range $i, $r := .Images}}
+  <tr>
+    <td style="border:1px solid #d0d7de;padding:8px 12px;{{if odd $i}}background:#f6f8fa;{{end}}">
+      {{if $r.UsesLatest}}<span style="color:#d1242f;font-weight:600;">⚠️</span>{{else}}<span style="color:#1a7f37;font-weight:600;">✅</span>{{end}}
+    </td>
+    <td style="border:1px solid #d0d7de;padding:8px 12px;{{if odd $i}}background:#f6f8fa;{{end}}">{{$r.Image.Project}}</td>
+    <td style="border:1px solid #d0d7de;padding:8px 12px;{{if odd $i}}background:#f6f8fa;{{end}}">{{$r.Image.Service}}</td>
+    <td style="border:1px solid #d0d7de;padding:8px 12px;{{if odd $i}}background:#f6f8fa;{{end}}"><code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{$r.Image.Registry}}/{{$r.Image.Name}}</code></td>
+    <td style="border:1px solid #d0d7de;padding:8px 12px;{{if odd $i}}background:#f6f8fa;{{end}}"><code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{$r.Image.Tag}}</code></td>
+    <td style="border:1px solid #d0d7de;padding:8px 12px;{{if odd $i}}background:#f6f8fa;{{end}}">
+      {{if $r.RecommendedVersion}}<code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{$r.RecommendedVersion}}</code>{{if and $r.RecommendedAge (ne $r.RecommendedAge "age unknown")}} <small>({{$r.RecommendedAge}})</small>{{else if eq $r.RecommendedAge "age unknown"}} <small>(age unknown)</small>{{end}}{{if $r.MajorVersionJump}} 💥{{end}}{{else}}—{{end}}
+    </td>
+  </tr>
+  {{end}}
+</table>
+
+{{if .HasLatest}}
+<h2 style="font-size:20px;font-weight:600;margin-top:24px;color:#24292f;">⚠️ Images Using <code>latest</code></h2>
+<p>Using <code>latest</code> is a security risk because:</p>
+<ul>
+  <li>Builds are not reproducible</li>
+  <li>Breaking changes can be pulled in without warning</li>
+  <li>No audit trail of which version is running</li>
+</ul>
+
+{{range .Images}}{{if .UsesLatest}}
+<h3 style="font-size:16px;font-weight:600;margin-top:20px;color:#24292f;"><code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{.Image.Registry}}/{{.Image.Name}}</code> ({{.Image.Project}})</h3>
+<ul>
+  <li><strong>Service:</strong> {{.Image.Service}}</li>
+  <li><strong>File:</strong> <code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{.File}}</code></li>
+  {{if .RecommendedVersion}}<li><strong>Recommended:</strong> <code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{.RecommendedVersion}}</code>{{if and .RecommendedAge (ne .RecommendedAge "age unknown")}} (released {{.RecommendedAge}} ago){{else if eq .RecommendedAge "age unknown"}} (age unknown){{end}}</li>{{end}}
+  {{if .MajorVersionJump}}<li><span style="background:#fff8c5;border:1px solid #d4a72c;border-radius:4px;padding:4px 8px;font-size:13px;">💥 Major version jump — review breaking changes before upgrading</span></li>{{end}}
+  {{if .AvailableVersions}}<li><strong>Available:</strong> {{range $i, $v := .AvailableVersions}}{{if $i}}, {{end}}<code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{$v}}</code>{{end}}</li>{{end}}
+</ul>
+{{end}}{{end}}
+{{end}}
+
+<h2 style="font-size:20px;font-weight:600;margin-top:24px;color:#24292f;">Security</h2>
+{{if not .HasSecurityIssues}}
+<p>✅ No security issues found.</p>
+{{else}}
+  {{if .HighIssues}}
+  <h3 style="font-size:16px;font-weight:600;margin-top:20px;color:#24292f;"><span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600;color:#fff;background:#cf222e;">HIGH</span></h3>
+  {{template "issueTable" .HighIssues}}
+  {{end}}
+  {{if .MediumIssues}}
+  <h3 style="font-size:16px;font-weight:600;margin-top:20px;color:#24292f;"><span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600;color:#fff;background:#bf8700;">MEDIUM</span></h3>
+  {{template "issueTable" .MediumIssues}}
+  {{end}}
+  {{if .LowIssues}}
+  <h3 style="font-size:16px;font-weight:600;margin-top:20px;color:#24292f;"><span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600;color:#fff;background:#0969da;">LOW</span></h3>
+  {{template "issueTable" .LowIssues}}
+  {{end}}
+{{end}}
+
+</div>
+</body>
+</html>
+
+{{define "issueTable"}}
+<table style="border-collapse:collapse;width:100%;margin-bottom:16px;font-size:14px;">
+  <tr>
+    <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Issue</th>
+    <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Location</th>
+    <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Suggestion</th>
+  </tr>
+  {{range $i, $issue := .}}
+  <tr>
+    <td style="border:1px solid #d0d7de;padding:8px 12px;{{if odd $i}}background:#f6f8fa;{{end}}">{{$issue.Description}}</td>
+    <td style="border:1px solid #d0d7de;padding:8px 12px;{{if odd $i}}background:#f6f8fa;{{end}}"><code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{$issue.Location}}</code></td>
+    <td style="border:1px solid #d0d7de;padding:8px 12px;{{if odd $i}}background:#f6f8fa;{{end}}">{{$issue.Suggestion}}</td>
+  </tr>
+  {{end}}
+</table>
+{{end}}
