@@ -186,7 +186,9 @@ services:
 
     // Create .env file
     envPath := filepath.Join(dir, ".env")
-    os.WriteFile(envPath, []byte("DB_HOST=localhost\n"), 0644)
+    if err := os.WriteFile(envPath, []byte("DB_HOST=localhost\n"), 0644); err != nil {
+	t.Fatal(err)
+    }
 
     checker := &EnvFileChecker{}
     issues, err := checker.Check(path)
