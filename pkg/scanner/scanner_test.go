@@ -9,9 +9,13 @@ import (
 func createProject(t *testing.T, root, name, filename string) {
     t.Helper()
     dir := filepath.Join(root, name)
-    os.MkdirAll(dir, 0755)
+    if err := os.MkdirAll(dir, 0755); err != nil {
+	t.Fatal(err)
+    }
     content := "services:\n  app:\n    image: nginx:latest\n"
-    os.WriteFile(filepath.Join(dir, filename), []byte(content), 0644)
+    if err := os.WriteFile(filepath.Join(dir, filename), []byte(content), 0644); err != nil {
+	t.Fatal(err)
+    }
 }
 
 func TestScan_FindsComposeFiles(t *testing.T) {
@@ -122,9 +126,15 @@ func TestScan_NestedProjects(t *testing.T) {
 func TestScan_IgnoresNonComposeFiles(t *testing.T) {
     root := t.TempDir()
     dir := filepath.Join(root, "myapp")
-    os.MkdirAll(dir, 0755)
-    os.WriteFile(filepath.Join(dir, "config.yml"), []byte("key: value"), 0644)
-    os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte("services:\n  app:\n    image: nginx\n"), 0644)
+    if err := os.MkdirAll(dir, 0755); err != nil {
+	t.Fatal(err)
+    }
+    if err := os.WriteFile(filepath.Join(dir, "config.yml"), []byte("key: value"), 0644); err != nil {
+	t.Fatal(err)
+    }
+    if err := os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte("services:\n  app:\n    image: nginx\n"), 0644); err != nil {
+	t.Fatal(err)
+    }
 
     projects, err := Scan(root)
     if err != nil {
