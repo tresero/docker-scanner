@@ -214,7 +214,9 @@ docker-scanner/
 
 ## Why This Matters — A Real-World Example
 
-While building this tool, I discovered my n8n instance was running `latest` which had silently pulled version `2.18.3` — a pre-release build with a git hash suffix. The actual latest stable release was `2.17.7`. Because n8n runs database migrations on startup, I couldn't safely downgrade.
+While building this tool, I discovered my n8n instance was running `latest` which had silently pulled version `2.18.3` — a pre-release build with a git hash suffix. The actual latest stable release was `2.17.7`. Because n8n runs database migrations on startup, I couldn't safely downgrade. I also couldn't switch to the `stable` tag because it points to `2.17.7`, which would be a downgrade.
+
+My only option was to pin to `2.18.3` and move forward carefully.
 
 This is exactly the scenario docker-scanner is designed to prevent. If I had been running this tool weekly, it would have:
 
@@ -223,7 +225,7 @@ This is exactly the scenario docker-scanner is designed to prevent. If I had bee
 3. Applied the 72-hour rule to avoid bleeding-edge builds
 4. Warned me before I was stuck on an unintended version
 
-The fix was to pin to `docker.n8n.io/n8nio/n8n:stable` going forward. The lesson: by the time you notice you're on the wrong version, it might be too late to go back.
+The lesson: by the time you notice you're on the wrong version, it might be too late to go back.
 
 ## Contributing
 
