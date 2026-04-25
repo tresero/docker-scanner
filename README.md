@@ -212,6 +212,19 @@ docker-scanner/
         └── config.go                # Configuration constants
 ```
 
+## Why This Matters — A Real-World Example
+
+While building this tool, I discovered my n8n instance was running `latest` which had silently pulled version `2.18.3` — a pre-release build with a git hash suffix. The actual latest stable release was `2.17.7`. Because n8n runs database migrations on startup, I couldn't safely downgrade.
+
+This is exactly the scenario docker-scanner is designed to prevent. If I had been running this tool weekly, it would have:
+
+1. Flagged `latest` as unsafe
+2. Recommended pinning to a specific stable version
+3. Applied the 72-hour rule to avoid bleeding-edge builds
+4. Warned me before I was stuck on an unintended version
+
+The fix was to pin to `docker.n8n.io/n8nio/n8n:stable` going forward. The lesson: by the time you notice you're on the wrong version, it might be too late to go back.
+
 ## Contributing
 
 Pull requests welcome. The codebase is designed to be extensible:
