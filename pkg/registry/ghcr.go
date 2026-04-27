@@ -68,7 +68,41 @@ func (r *GHCRRegistry) FetchVersions(image models.Image) ([]models.RegistryVersi
 		versions[i].ReleasedAt = fetchManifestDate(image.Name, versions[i].Tag, token)
 	}
 
+	// Fallback: if LinuxServer image returned poor results, try Docker Hub
+	if isLinuxServerImage(image.Name) && len(versions) < 3 {
+		dockerHubName := "linuxserver/" + linuxServerAppName(image.Name)
+		hubURL := fmt.Sprintf(
+			"https://registry.hub.docker.com/v2/repositories/%s/tags/?page_size=100&ordering=last_updated",
+			dockerHubName,
+		)
+		hubBody, err := httpGet(hubURL)
+		if err == nil {
+			var result dockerHubResponse
+			if err := json.Unmarshal(hubBody, &result); err == nil {
+				hubVersions := FilterAndSortDockerHubTags(result.Results)
+				if len(hubVersions) > len(versions) {
+					versions = hubVersions
+				}
+			}
+		}
+	}
+
 	return versions, nil
+}
+
+// isLinuxServerImage checks if an image is from LinuxServer
+func isLinuxServerImage(name string) bool {
+	return strings.HasPrefix(name, "linuxserver/")
+}
+
+// linuxServerAppName extracts the app name from a LinuxServer image
+// e.g., "linuxserver/sonarr" -> "sonarr"
+func linuxServerAppName(name string) string {
+	parts := strings.Split(name, "/")
+	if len(parts) >= 2 {
+		return parts[len(parts)-1]
+	}
+	return name
 }
 
 func getGHCRToken(imageName string) (string, error) {
