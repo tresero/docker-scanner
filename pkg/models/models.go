@@ -4,11 +4,12 @@ import "time"
 
 // Image represents a Docker image reference
 type Image struct {
-	Registry string // e.g., "docker.io", "ghcr.io"
-	Name     string // e.g., "serfriz/caddy-cloudflare"
-	Tag      string // e.g., "latest", "1.2.3"
-	Service  string // e.g., "caddy"
-	Project  string // e.g., "caddy"
+	Registry      string // e.g., "docker.io", "ghcr.io"
+	Name          string // e.g., "serfriz/caddy-cloudflare"
+	Tag           string // e.g., "latest", "1.2.3"
+	Service       string // e.g., "caddy"
+	ContainerName string // e.g., "salsa_blanca" (from container_name in compose)
+	Project       string // e.g., "caddy"
 }
 
 // ImageInfo contains image details and metadata

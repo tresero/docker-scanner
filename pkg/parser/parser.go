@@ -18,8 +18,9 @@ type ComposeFile struct {
 
 // Service represents a single service in a compose file
 type Service struct {
-	Image       string      `yaml:"image"`
-	Environment interface{} `yaml:"environment"`
+	Image         string      `yaml:"image"`
+	ContainerName string      `yaml:"container_name"`
+	Environment   interface{} `yaml:"environment"`
 }
 
 // Parse reads a compose file and extracts image references
@@ -58,6 +59,7 @@ func parseFile(filePath string, projectName string) ([]models.ImageInfo, error) 
 		image := parseImageRef(service.Image)
 		image.Service = serviceName
 		image.Project = projectName
+		image.ContainerName = service.ContainerName
 
 		info := models.ImageInfo{
 			Image:      image,
@@ -155,30 +157,72 @@ func GetComposeDir(filePath string) string {
 	return filepath.Dir(filePath)
 }
 
-// GetRunningVersion queries Docker for the actual version of a running container
+// RunningStatus checks if a container is running and returns its version
+// Returns: version string, or "unknown" if running but version can't be determined, or "" if not running
 func GetRunningVersion(containerName string) string {
+	// Check if container is running
 	out, err := exec.Command("docker", "inspect", "--format",
-		"{{index .Config.Labels \"org.opencontainers.image.version\"}}", containerName).Output()
+		"{{.State.Running}}", containerName).Output()
 	if err != nil {
 		return ""
 	}
 
-	version := strings.TrimSpace(string(out))
-	if version != "" && version != "<no value>" {
-		return version
+	running := strings.TrimSpace(string(out))
+	if running != "true" {
+		return ""
 	}
 
-	// Fallback: get the image tag
-	out, err = exec.Command("docker", "inspect", "--format", "{{.Config.Image}}", containerName).Output()
+	// Container is running — try to get version
+	// First: get the image tag
+	out, err = exec.Command("docker", "inspect", "--format",
+		"{{.Config.Image}}", containerName).Output()
 	if err != nil {
-		return ""
+		return "unknown"
 	}
 
 	image := strings.TrimSpace(string(out))
+
+	// If it's a sha256 digest, try getting the repo tag instead
+	if strings.HasPrefix(image, "sha256:") {
+		out, err = exec.Command("docker", "inspect", "--format",
+			"{{index .Image}}", containerName).Output()
+		if err != nil {
+			return "unknown"
+		}
+		imageID := strings.TrimSpace(string(out))
+
+		out, err = exec.Command("docker", "image", "inspect", "--format",
+			"{{index .RepoTags 0}}", imageID).Output()
+		if err != nil {
+			return "unknown"
+		}
+		image = strings.TrimSpace(string(out))
+	}
+
+	// Extract the tag
 	parts := strings.SplitN(image, ":", 2)
 	if len(parts) > 1 && parts[1] != "latest" {
 		return parts[1]
 	}
 
-	return ""
+	// Try OCI version label, but skip base image versions
+	out, err = exec.Command("docker", "inspect", "--format",
+		"{{index .Config.Labels \"org.opencontainers.image.version\"}}", containerName).Output()
+	if err != nil {
+		return "unknown"
+	}
+
+	version := strings.TrimSpace(string(out))
+	if version == "" || version == "<no value>" {
+		return "unknown"
+	}
+
+	refName, _ := exec.Command("docker", "inspect", "--format",
+		"{{index .Config.Labels \"org.opencontainers.image.ref.name\"}}", containerName).Output()
+	ref := strings.TrimSpace(string(refName))
+	if ref == "ubuntu" || ref == "debian" || ref == "alpine" {
+		return "unknown"
+	}
+
+	return version
 }

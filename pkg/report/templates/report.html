@@ -43,6 +43,7 @@
     <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Service</th>
     <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Image</th>
     <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Tag</th>
+    <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Running</th>
     <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Recommended</th>
   </tr>
   {{range $i, $r := .Images}}
@@ -55,7 +56,10 @@
     <td style="border:1px solid #d0d7de;padding:8px 12px;{{if odd $i}}background:#f6f8fa;{{end}}"><code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{$r.Image.Registry}}/{{$r.Image.Name}}</code></td>
     <td style="border:1px solid #d0d7de;padding:8px 12px;{{if odd $i}}background:#f6f8fa;{{end}}"><code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{$r.Image.Tag}}</code></td>
     <td style="border:1px solid #d0d7de;padding:8px 12px;{{if odd $i}}background:#f6f8fa;{{end}}">
-      {{if $r.RecommendedVersion}}<code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{$r.RecommendedVersion}}</code>{{if and $r.RecommendedAge (ne $r.RecommendedAge "age unknown")}} <small>({{$r.RecommendedAge}})</small>{{else if eq $r.RecommendedAge "age unknown"}} <small>(age unknown)</small>{{end}}{{if $r.MajorVersionJump}} 💥{{end}}{{else}}—{{end}}
+      {{if eq $r.RunningVersion "unknown"}}<span style="color:#bf8700;">latest (unknown)</span>{{else if $r.RunningVersion}}<code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{$r.RunningVersion}}</code>{{else}}<span style="color:#656d76;">not running</span>{{end}}
+    </td>
+    <td style="border:1px solid #d0d7de;padding:8px 12px;{{if odd $i}}background:#f6f8fa;{{end}}">
+      {{if $r.RecommendedVersion}}<code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{$r.RecommendedVersion}}</code>{{if and $r.RecommendedAge (ne $r.RecommendedAge "age unknown")}} <small>({{$r.RecommendedAge}})</small>{{else if eq $r.RecommendedAge "age unknown"}} <small>(age unknown)</small>{{end}}{{if $r.MajorVersionJump}} 💥{{end}}{{if $r.IsDowngrade}} ⬇️{{end}}{{else}}—{{end}}
     </td>
   </tr>
   {{end}}
@@ -75,8 +79,10 @@
 <ul>
   <li><strong>Service:</strong> {{.Image.Service}}</li>
   <li><strong>File:</strong> <code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{.File}}</code></li>
+  {{if .RunningVersion}}{{if eq .RunningVersion "unknown"}}<li><strong>Running:</strong> <span style="color:#bf8700;">latest (unknown)</span></li>{{else}}<li><strong>Running:</strong> <code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{.RunningVersion}}</code></li>{{end}}{{else}}<li><strong>Running:</strong> <span style="color:#656d76;">not running</span></li>{{end}}
   {{if .RecommendedVersion}}<li><strong>Recommended:</strong> <code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{.RecommendedVersion}}</code>{{if and .RecommendedAge (ne .RecommendedAge "age unknown")}} (released {{.RecommendedAge}} ago){{else if eq .RecommendedAge "age unknown"}} (age unknown){{end}}</li>{{end}}
   {{if .MajorVersionJump}}<li><span style="background:#fff8c5;border:1px solid #d4a72c;border-radius:4px;padding:4px 8px;font-size:13px;">💥 Major version jump — review breaking changes before upgrading</span></li>{{end}}
+  {{if .IsDowngrade}}<li><span style="background:#ffebe9;border:1px solid #d1242f;border-radius:4px;padding:4px 8px;font-size:13px;">⬇️ DOWNGRADE — recommended is older than running version, verify database compatibility</span></li>{{end}}
   {{if .AvailableVersions}}<li><strong>Available:</strong> {{range $i, $v := .AvailableVersions}}{{if $i}}, {{end}}<code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{$v}}</code>{{end}}</li>{{end}}
 </ul>
 {{end}}{{end}}
@@ -98,6 +104,16 @@
   <h3 style="font-size:16px;font-weight:600;margin-top:20px;color:#24292f;"><span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600;color:#fff;background:#0969da;">LOW</span></h3>
   {{template "issueTable" .LowIssues}}
   {{end}}
+{{end}}
+
+{{if .HasUnknownVersions}}
+<h2 style="font-size:20px;font-weight:600;margin-top:24px;color:#24292f;">Unknown Running Versions</h2>
+<p>The following containers are running <code>latest</code> but the exact version could not be determined. This is a common problem with <code>latest</code> tags — another reason to pin to a specific version.</p>
+<ul>
+{{range .Images}}{{if eq .RunningVersion "unknown"}}
+  <li><strong>{{.Image.Service}}</strong> — container: <code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{if .Image.ContainerName}}{{.Image.ContainerName}}{{else}}{{.Image.Service}}{{end}}</code> — image: <code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{.Image.Registry}}/{{.Image.Name}}</code></li>
+{{end}}{{end}}
+</ul>
 {{end}}
 
 </div>

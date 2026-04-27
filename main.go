@@ -62,7 +62,11 @@ func main() {
 			images[i].SecurityIssues = append(images[i].SecurityIssues, issues...)
 
 			// Get running version from Docker
-			images[i].RunningVersion = parser.GetRunningVersion(images[i].Image.Service)
+			name := images[i].Image.ContainerName
+			if name == "" {
+				name = images[i].Image.Service
+			}
+			images[i].RunningVersion = parser.GetRunningVersion(name)
 		}
 
 		if !*skipRemote {

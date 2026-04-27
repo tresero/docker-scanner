@@ -13,17 +13,18 @@ var templateFS embed.FS
 
 // htmlData is the data structure passed to the HTML template
 type htmlData struct {
-	Generated         string
-	ProjectCount      int
-	ImageCount        int
-	LatestCount       int
-	SecurityCount     int
-	HasLatest         bool
-	HasSecurityIssues bool
-	Images            []models.ImageInfo
-	HighIssues        []models.SecurityIssue
-	MediumIssues      []models.SecurityIssue
-	LowIssues         []models.SecurityIssue
+	Generated           string
+	ProjectCount        int
+	ImageCount          int
+	LatestCount         int
+	SecurityCount       int
+	HasLatest           bool
+	HasSecurityIssues   bool
+	HasUnknownVersions  bool
+	Images              []models.ImageInfo
+	HighIssues          []models.SecurityIssue
+	MediumIssues        []models.SecurityIssue
+	LowIssues           []models.SecurityIssue
 }
 
 // GenerateHTML produces an email-friendly HTML report using html/template
@@ -50,6 +51,7 @@ func GenerateHTML(results []models.ImageInfo) string {
 func buildHTMLData(results []models.ImageInfo) htmlData {
 	projects := make(map[string]bool)
 	latestCount := 0
+	hasUnknown := false
 	var allIssues []models.SecurityIssue
 
 	for _, r := range results {
@@ -57,20 +59,24 @@ func buildHTMLData(results []models.ImageInfo) htmlData {
 		if r.UsesLatest {
 			latestCount++
 		}
+		if r.RunningVersion == "unknown" {
+			hasUnknown = true
+		}
 		allIssues = append(allIssues, r.SecurityIssues...)
 	}
 
 	return htmlData{
-		Generated:         time.Now().Format("2006-01-02 15:04:05"),
-		ProjectCount:      len(projects),
-		ImageCount:        len(results),
-		LatestCount:       latestCount,
-		SecurityCount:     len(allIssues),
-		HasLatest:         latestCount > 0,
-		HasSecurityIssues: len(allIssues) > 0,
-		Images:            results,
-		HighIssues:        filterBySeverity(allIssues, "high"),
-		MediumIssues:      filterBySeverity(allIssues, "medium"),
-		LowIssues:         filterBySeverity(allIssues, "low"),
+		Generated:          time.Now().Format("2006-01-02 15:04:05"),
+		ProjectCount:       len(projects),
+		ImageCount:         len(results),
+		LatestCount:        latestCount,
+		SecurityCount:      len(allIssues),
+		HasLatest:          latestCount > 0,
+		HasSecurityIssues:  len(allIssues) > 0,
+		HasUnknownVersions: hasUnknown,
+		Images:             results,
+		HighIssues:         filterBySeverity(allIssues, "high"),
+		MediumIssues:       filterBySeverity(allIssues, "medium"),
+		LowIssues:          filterBySeverity(allIssues, "low"),
 	}
 }

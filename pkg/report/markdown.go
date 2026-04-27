@@ -86,14 +86,21 @@ func buildImageTable(w *mdWriter, results []models.ImageInfo) {
 			}
 		}
 
+		running := "not running"
+		if r.RunningVersion == "unknown" {
+			running = "`latest` (unknown)"
+		} else if r.RunningVersion != "" {
+			running = fmt.Sprintf("`%s`", r.RunningVersion)
+		}
+
 		rows = append(rows, []string{
-			status, r.Image.Project, r.Image.Service, fullImage, tag, recommended,
+			status, r.Image.Project, r.Image.Service, fullImage, tag, running, recommended,
 		})
 	}
 
 	w.H2("Images")
 	w.Table(
-		[]string{"Status", "Project", "Service", "Image", "Tag", "Recommended"},
+		[]string{"Status", "Project", "Service", "Image", "Tag", "Running", "Recommended"},
 		rows,
 	)
 }
@@ -132,6 +139,10 @@ func buildLatestDetails(w *mdWriter, results []models.ImageInfo) {
 		details = append(details, fmt.Sprintf("**Service:** %s", r.Image.Service))
 		details = append(details, fmt.Sprintf("**File:** `%s`", r.File))
 
+		if r.RunningVersion != "" {
+			details = append(details, fmt.Sprintf("**Running:** `%s`", r.RunningVersion))
+		}
+
 		if r.RecommendedVersion != "" {
 			recLine := fmt.Sprintf("**Recommended:** `%s`", r.RecommendedVersion)
 			if r.RecommendedAge != "" && r.RecommendedAge != "age unknown" {
@@ -146,6 +157,10 @@ func buildLatestDetails(w *mdWriter, results []models.ImageInfo) {
 			details = append(details, ":boom: **Major version jump — review breaking changes before upgrading**")
 		}
 
+		if r.IsDowngrade {
+			details = append(details, ":arrow_down: **DOWNGRADE — recommended is older than running version, verify database compatibility**")
+		}
+
 		if len(r.AvailableVersions) > 0 {
 			details = append(details, fmt.Sprintf("**Available versions:** %s",
 				formatVersionList(r.AvailableVersions)))
@@ -156,6 +171,9 @@ func buildLatestDetails(w *mdWriter, results []models.ImageInfo) {
 }
 
 func buildSecuritySection(w *mdWriter, results []models.ImageInfo) {
+	// Add version help section for unknowns
+	buildVersionHelp(w, results)
+
 	var allIssues []models.SecurityIssue
 	for _, r := range results {
 		allIssues = append(allIssues, r.SecurityIssues...)
@@ -207,4 +225,31 @@ func formatVersionList(versions []string) string {
 		formatted = append(formatted, fmt.Sprintf("`%s`", v))
 	}
 	return strings.Join(formatted, ", ")
+}
+
+func buildVersionHelp(w *mdWriter, results []models.ImageInfo) {
+	var unknowns []models.ImageInfo
+	for _, r := range results {
+		if r.RunningVersion == "unknown" {
+			unknowns = append(unknowns, r)
+		}
+	}
+
+	if len(unknowns) == 0 {
+		return
+	}
+
+	w.H2("Unknown Running Versions")
+	w.P("The following containers are running `latest` but the exact version could not be determined. This is a common problem with `latest` tags — another reason to pin to a specific version.")
+
+	var items []string
+	for _, r := range unknowns {
+		name := r.Image.ContainerName
+		if name == "" {
+			name = r.Image.Service
+		}
+		items = append(items, fmt.Sprintf("**%s** — container: `%s` — image: `%s/%s`",
+			r.Image.Service, name, r.Image.Registry, r.Image.Name))
+	}
+	w.BulletList(items)
 }

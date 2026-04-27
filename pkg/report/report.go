@@ -72,6 +72,13 @@ func writeImageDetails(sb *strings.Builder, results []models.ImageInfo) {
 		sb.WriteString(fmt.Sprintf("      Project:   %s\n", r.Image.Project))
 		sb.WriteString(fmt.Sprintf("      Service:   %s\n", r.Image.Service))
 		sb.WriteString(fmt.Sprintf("      Tag:       %s\n", r.Image.Tag))
+		if r.RunningVersion == "unknown" {
+			sb.WriteString(fmt.Sprintf("      Running:   latest (unknown)\n"))
+		} else if r.RunningVersion != "" {
+			sb.WriteString(fmt.Sprintf("      Running:   %s\n", r.RunningVersion))
+		} else {
+			sb.WriteString(fmt.Sprintf("      Running:   not running\n"))
+		}
 		sb.WriteString(fmt.Sprintf("      File:      %s\n", r.File))
 
 		if r.UsesLatest {

@@ -12,6 +12,7 @@ docker-scanner finds these issues across all your projects in one run and gives 
 
 - Recursively scans directories for `docker-compose.yml` and `compose.yml` files
 - Flags images using `latest` or other unsafe tags (`main`, `dev`, `nightly`, `edge`)
+- Shows the actual running version for each container by querying the Docker daemon
 - Detects hardcoded passwords, API keys, tokens, and secrets in environment variables
 - Checks for missing `.env` files when `${VAR}` syntax is used
 - Queries Docker Hub, GitHub Container Registry (GHCR), and LinuxServer (lscr.io) for available versions
@@ -19,7 +20,8 @@ docker-scanner finds these issues across all your projects in one run and gives 
 - Filters out pre-release tags (rc, beta, alpha, dev)
 - Prefers clean semver tags over suffixed variants (e.g., `0.21.0` over `0.21.0-rocm`)
 - Warns about major version jumps that may contain breaking changes
-- Reports in text, markdown, or HTML format
+- Warns when the recommended version is a downgrade from the running version
+- Reports in text, markdown, or HTML format (HTML works great for email reports)
 - Single binary, no runtime dependencies, cross-platform
 
 ## Install
@@ -82,6 +84,16 @@ GOOS=windows GOARCH=amd64 go build -o docker-scanner.exe .
 | `-safe-days` | `3` | Only recommend versions older than N days |
 | `-skip-remote` | `false` | Skip registry version lookups |
 | `-verbose` | `false` | Show detailed scan progress |
+
+### Running Version Detection
+
+When Docker is available on the host, docker-scanner queries the Docker daemon to show the actual version running for each container. This is critical for identifying situations where:
+
+- `latest` silently pulled a pre-release or nightly build
+- The running version is newer than the recommended safe version (downgrade risk ⬇️)
+- A major version jump has occurred (💥)
+
+Some images don't expose their version through standard labels or tags. These are shown as `latest (unknown)` in the report — which is itself a reason to pin to a specific version.
 
 ## The 72-Hour Rule
 
@@ -188,7 +200,7 @@ docker-scanner/
 │   ├── scanner/
 │   │   └── scanner.go               # Finds compose files
 │   ├── parser/
-│   │   └── parser.go                # Extracts images from YAML
+│   │   └── parser.go                # Extracts images from YAML, queries Docker daemon
 │   ├── registry/
 │   │   ├── registry.go              # Registry interface
 │   │   ├── dockerhub.go             # Docker Hub implementation
@@ -204,7 +216,7 @@ docker-scanner/
 │       ├── report.go                # Text formatter
 │       ├── markdown.go              # Markdown formatter
 │       ├── mdutil.go                # Markdown helpers
-│       ├── html.go                  # HTML formatter
+│       ├── html.go                  # HTML formatter (html/template)
 │       └── templates/
 │           └── report.html          # HTML email template
 └── internal/
