@@ -13,16 +13,20 @@ docker-scanner finds these issues across all your projects in one run and gives 
 - Recursively scans directories for `docker-compose.yml` and `compose.yml` files
 - Flags images using `latest` or other unsafe tags (`main`, `dev`, `nightly`, `edge`)
 - Shows the actual running version for each container by querying the Docker daemon
+- Distinguishes between `latest (unknown)` (running but version can't be determined) and `not running`
 - Detects hardcoded passwords, API keys, tokens, and secrets in environment variables
 - Checks for missing `.env` files when `${VAR}` syntax is used
 - Queries Docker Hub, GitHub Container Registry (GHCR), and LinuxServer (lscr.io) for available versions
+- Falls back to Docker Hub for LinuxServer images when GHCR returns incomplete results
 - Recommends the newest stable version that has been published for at least 72 hours (configurable)
 - Filters out pre-release tags (rc, beta, alpha, dev)
 - Prefers clean semver tags over suffixed variants (e.g., `0.21.0` over `0.21.0-rocm`)
-- Warns about major version jumps that may contain breaking changes
-- Warns when the recommended version is a downgrade from the running version
+- Warns about major version jumps that may contain breaking changes 💥
+- Warns when the recommended version is a downgrade from the running version ⬇️
+- Lists containers where the version couldn't be determined with guidance on manual checking
 - Reports in text, markdown, or HTML format (HTML works great for email reports)
 - Single binary, no runtime dependencies, cross-platform
+- Skips `node_modules`, `vendor`, `.git`, and other dependency directories automatically
 
 ## Install
 
