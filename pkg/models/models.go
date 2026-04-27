@@ -16,10 +16,12 @@ type ImageInfo struct {
 	Image               Image
 	File                string   // Path to compose file
 	UsesLatest          bool
+	RunningVersion      string   // Actual version running in Docker
 	AvailableVersions   []string
 	RecommendedVersion  string
 	RecommendedAge      string // e.g., "5 days", "3 weeks"
 	MajorVersionJump    bool   // true if recommended is a different major version
+	IsDowngrade         bool   // true if recommended is older than running version
 	SecurityIssues      []SecurityIssue
 }
 

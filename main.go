@@ -60,6 +60,9 @@ func main() {
 		for i := range images {
 			issues := security.RunAll(checkers, images[i].File)
 			images[i].SecurityIssues = append(images[i].SecurityIssues, issues...)
+
+			// Get running version from Docker
+			images[i].RunningVersion = parser.GetRunningVersion(images[i].Image.Service)
 		}
 
 		if !*skipRemote {
@@ -89,6 +92,11 @@ func main() {
 				images[i].RecommendedVersion = pick.Version
 				images[i].RecommendedAge = pick.Age
 				images[i].MajorVersionJump = pick.MajorJump
+
+				// Detect downgrade: recommended is older than what's running
+				if images[i].RunningVersion != "" && pick.Version != "" {
+					images[i].IsDowngrade = registry.CompareSemver(pick.Version, images[i].RunningVersion) < 0
+				}
 			}
 		}
 
