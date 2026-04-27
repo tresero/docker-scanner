@@ -24,6 +24,23 @@ var (
 func main() {
 	flag.Parse()
 
+	// Show help if no -dir flag was provided and scanning current directory
+	if *scanDir == "." && flag.NFlag() == 0 {
+		fmt.Println("docker-scanner - Security and version auditing for Docker Compose projects")
+		fmt.Println()
+		fmt.Println("Usage:")
+		fmt.Println("  docker-scanner -dir <path> [flags]")
+		fmt.Println()
+		fmt.Println("Examples:")
+		fmt.Println("  docker-scanner -dir ~/docker-projects")
+		fmt.Println("  docker-scanner -dir ~/docker-projects -format html -output report.html")
+		fmt.Println("  docker-scanner -dir ~/docker-projects -safe-days 7")
+		fmt.Println()
+		fmt.Println("Flags:")
+		flag.PrintDefaults()
+		return
+	}
+
 	if *verbose {
 		fmt.Fprintf(os.Stderr, "Scanning %s for compose files...\n", *scanDir)
 	}
