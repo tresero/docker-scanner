@@ -44,13 +44,13 @@ go build -o docker-scanner .
 
 ```bash
 # Linux
-GOOS=linux GOARCH=amd64 go build -o docker-scanner-linux .
+GOOS=linux GOARCH=amd64 go build -o docker-scanner-linux-amd64 .
 
 # macOS (Apple Silicon)
-GOOS=darwin GOARCH=arm64 go build -o docker-scanner-mac .
+GOOS=darwin GOARCH=arm64 go build -o docker-scanner-darwin-arm64 .
 
 # Windows
-GOOS=windows GOARCH=amd64 go build -o docker-scanner.exe .
+GOOS=windows GOARCH=amd64 go build -o docker-scanner-windows-amd64.exe .
 ```
 
 ## Usage
