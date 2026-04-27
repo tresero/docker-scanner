@@ -2,72 +2,76 @@
 <html>
 <head><meta charset="utf-8"></head>
 <body>
-<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1a1a1a;max-width:900px;margin:0 auto;padding:20px;">
+<div style="{{.Styles.Body}}">
 
-<h1 style="font-size:24px;font-weight:600;border-bottom:2px solid #e1e4e8;padding-bottom:8px;">Docker Compose Security &amp; Version Report</h1>
-<p style="color:#656d76;font-size:13px;">Generated: {{.Generated}}</p>
+<h1 style="{{.Styles.H1}}">Docker Compose Security &amp; Version Report</h1>
+<p style="{{.Styles.Meta}}">Generated: {{.Generated}}</p>
 
-<h2 style="font-size:20px;font-weight:600;margin-top:24px;color:#24292f;">Summary</h2>
-<table style="border-collapse:collapse;width:100%;margin-bottom:16px;font-size:14px;">
+<h2 style="{{.Styles.H2}}">Summary</h2>
+
+<table style="{{.Styles.Table}}">
   <tr>
-    <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Metric</th>
-    <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Count</th>
+    <th style="{{.Styles.Th}}">Metric</th>
+    <th style="{{.Styles.Th}}">Count</th>
   </tr>
   <tr>
-    <td style="border:1px solid #d0d7de;padding:8px 12px;">Projects scanned</td>
-    <td style="border:1px solid #d0d7de;padding:8px 12px;">{{.ProjectCount}}</td>
+    <td style="{{.Styles.Td}}">Projects scanned</td>
+    <td style="{{.Styles.Td}}">{{.ProjectCount}}</td>
   </tr>
   <tr>
-    <td style="border:1px solid #d0d7de;padding:8px 12px;background:#f6f8fa;">Images found</td>
-    <td style="border:1px solid #d0d7de;padding:8px 12px;background:#f6f8fa;">{{.ImageCount}}</td>
+    <td style="{{.Styles.TdAlt}}">Images found</td>
+    <td style="{{.Styles.TdAlt}}">{{.ImageCount}}</td>
   </tr>
   <tr>
-    <td style="border:1px solid #d0d7de;padding:8px 12px;">Using <code>latest</code> tag</td>
-    <td style="border:1px solid #d0d7de;padding:8px 12px;">
-      {{if gt .LatestCount 0}}<span style="color:#d1242f;font-weight:600;">{{.LatestCount}} ⚠️</span>{{else}}{{.LatestCount}}{{end}}
+    <td style="{{.Styles.Td}}">Using <code style="{{.Styles.Code}}">latest</code> tag</td>
+    <td style="{{.Styles.Td}}">
+      {{if gt .LatestCount 0}}<span style="{{.Styles.Warn}}">{{.LatestCount}} ⚠️</span>{{else}}{{.LatestCount}}{{end}}
     </td>
   </tr>
   <tr>
-    <td style="border:1px solid #d0d7de;padding:8px 12px;background:#f6f8fa;">Security issues</td>
-    <td style="border:1px solid #d0d7de;padding:8px 12px;background:#f6f8fa;">
-      {{if gt .SecurityCount 0}}<span style="color:#d1242f;font-weight:600;">{{.SecurityCount}} ⚠️</span>{{else}}{{.SecurityCount}}{{end}}
+    <td style="{{.Styles.TdAlt}}">Security issues</td>
+    <td style="{{.Styles.TdAlt}}">
+      {{if gt .SecurityCount 0}}<span style="{{.Styles.Warn}}">{{.SecurityCount}} ⚠️</span>{{else}}{{.SecurityCount}}{{end}}
     </td>
   </tr>
 </table>
 
-<h2 style="font-size:20px;font-weight:600;margin-top:24px;color:#24292f;">Images</h2>
-<table style="border-collapse:collapse;width:100%;margin-bottom:16px;font-size:14px;">
+<h2 style="{{.Styles.H2}}">Images</h2>
+
+<table style="{{.Styles.Table}}">
   <tr>
-    <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Status</th>
-    <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Project</th>
-    <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Service</th>
-    <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Image</th>
-    <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Tag</th>
-    <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Running</th>
-    <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Recommended</th>
+    <th style="{{.Styles.Th}}">Status</th>
+    <th style="{{.Styles.Th}}">Project</th>
+    <th style="{{.Styles.Th}}">Service</th>
+    <th style="{{.Styles.Th}}">Image</th>
+    <th style="{{.Styles.Th}}">Tag</th>
+    <th style="{{.Styles.Th}}">Running</th>
+    <th style="{{.Styles.Th}}">Recommended</th>
   </tr>
   {{range $i, $r := .Images}}
+  {{$s := $.Styles}}
   <tr>
-    <td style="border:1px solid #d0d7de;padding:8px 12px;{{if odd $i}}background:#f6f8fa;{{end}}">
-      {{if $r.UsesLatest}}<span style="color:#d1242f;font-weight:600;">⚠️</span>{{else}}<span style="color:#1a7f37;font-weight:600;">✅</span>{{end}}
+    <td style="{{if odd $i}}{{$s.TdAlt}}{{else}}{{$s.Td}}{{end}}">
+      {{if $r.UsesLatest}}<span style="{{$s.Warn}}">⚠️</span>{{else}}<span style="{{$s.Ok}}">✅</span>{{end}}
     </td>
-    <td style="border:1px solid #d0d7de;padding:8px 12px;{{if odd $i}}background:#f6f8fa;{{end}}">{{$r.Image.Project}}</td>
-    <td style="border:1px solid #d0d7de;padding:8px 12px;{{if odd $i}}background:#f6f8fa;{{end}}">{{$r.Image.Service}}</td>
-    <td style="border:1px solid #d0d7de;padding:8px 12px;{{if odd $i}}background:#f6f8fa;{{end}}"><code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{$r.Image.Registry}}/{{$r.Image.Name}}</code></td>
-    <td style="border:1px solid #d0d7de;padding:8px 12px;{{if odd $i}}background:#f6f8fa;{{end}}"><code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{$r.Image.Tag}}</code></td>
-    <td style="border:1px solid #d0d7de;padding:8px 12px;{{if odd $i}}background:#f6f8fa;{{end}}">
-      {{if eq $r.RunningVersion "unknown"}}<span style="color:#bf8700;">latest (unknown)</span>{{else if $r.RunningVersion}}<code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{$r.RunningVersion}}</code>{{else}}<span style="color:#656d76;">not running</span>{{end}}
+    <td style="{{if odd $i}}{{$s.TdAlt}}{{else}}{{$s.Td}}{{end}}">{{$r.Image.Project}}</td>
+    <td style="{{if odd $i}}{{$s.TdAlt}}{{else}}{{$s.Td}}{{end}}">{{$r.Image.Service}}</td>
+    <td style="{{if odd $i}}{{$s.TdAlt}}{{else}}{{$s.Td}}{{end}}"><code style="{{$s.Code}}">{{$r.Image.Registry}}/{{$r.Image.Name}}</code></td>
+    <td style="{{if odd $i}}{{$s.TdAlt}}{{else}}{{$s.Td}}{{end}}"><code style="{{$s.Code}}">{{$r.Image.Tag}}</code></td>
+    <td style="{{if odd $i}}{{$s.TdAlt}}{{else}}{{$s.Td}}{{end}}">
+      {{if eq $r.RunningVersion "unknown"}}<span style="{{$s.Unknown}}">latest (unknown)</span>{{else if $r.RunningVersion}}<code style="{{$s.Code}}">{{$r.RunningVersion}}</code>{{else}}<span style="{{$s.Muted}}">not running</span>{{end}}
     </td>
-    <td style="border:1px solid #d0d7de;padding:8px 12px;{{if odd $i}}background:#f6f8fa;{{end}}">
-      {{if $r.RecommendedVersion}}<code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{$r.RecommendedVersion}}</code>{{if and $r.RecommendedAge (ne $r.RecommendedAge "age unknown")}} <small>({{$r.RecommendedAge}})</small>{{else if eq $r.RecommendedAge "age unknown"}} <small>(age unknown)</small>{{end}}{{if $r.MajorVersionJump}} 💥{{end}}{{if $r.IsDowngrade}} ⬇️{{end}}{{else}}—{{end}}
+    <td style="{{if odd $i}}{{$s.TdAlt}}{{else}}{{$s.Td}}{{end}}">
+      {{if $r.RecommendedVersion}}<code style="{{$s.Code}}">{{$r.RecommendedVersion}}</code>{{if and $r.RecommendedAge (ne $r.RecommendedAge "age unknown")}} <small>({{$r.RecommendedAge}})</small>{{else if eq $r.RecommendedAge "age unknown"}} <small>(age unknown)</small>{{end}}{{if $r.MajorVersionJump}} 💥{{end}}{{if $r.IsDowngrade}} ⬇️{{end}}{{else}}—{{end}}
     </td>
   </tr>
   {{end}}
 </table>
 
 {{if .HasLatest}}
-<h2 style="font-size:20px;font-weight:600;margin-top:24px;color:#24292f;">⚠️ Images Using <code>latest</code></h2>
-<p>Using <code>latest</code> is a security risk because:</p>
+<h2 style="{{.Styles.H2}}">⚠️ Images Using <code style="{{.Styles.Code}}">latest</code></h2>
+
+<p>Using <code style="{{.Styles.Code}}">latest</code> is a security risk because:</p>
 <ul>
   <li>Builds are not reproducible</li>
   <li>Breaking changes can be pulled in without warning</li>
@@ -75,43 +79,85 @@
 </ul>
 
 {{range .Images}}{{if .UsesLatest}}
-<h3 style="font-size:16px;font-weight:600;margin-top:20px;color:#24292f;"><code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{.Image.Registry}}/{{.Image.Name}}</code> ({{.Image.Project}})</h3>
+{{$s := $.Styles}}
+<h3 style="{{$s.H3}}"><code style="{{$s.Code}}">{{.Image.Registry}}/{{.Image.Name}}</code> ({{.Image.Project}})</h3>
 <ul>
   <li><strong>Service:</strong> {{.Image.Service}}</li>
-  <li><strong>File:</strong> <code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{.File}}</code></li>
-  {{if .RunningVersion}}{{if eq .RunningVersion "unknown"}}<li><strong>Running:</strong> <span style="color:#bf8700;">latest (unknown)</span></li>{{else}}<li><strong>Running:</strong> <code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{.RunningVersion}}</code></li>{{end}}{{else}}<li><strong>Running:</strong> <span style="color:#656d76;">not running</span></li>{{end}}
-  {{if .RecommendedVersion}}<li><strong>Recommended:</strong> <code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{.RecommendedVersion}}</code>{{if and .RecommendedAge (ne .RecommendedAge "age unknown")}} (released {{.RecommendedAge}} ago){{else if eq .RecommendedAge "age unknown"}} (age unknown){{end}}</li>{{end}}
-  {{if .MajorVersionJump}}<li><span style="background:#fff8c5;border:1px solid #d4a72c;border-radius:4px;padding:4px 8px;font-size:13px;">💥 Major version jump — review breaking changes before upgrading</span></li>{{end}}
-  {{if .IsDowngrade}}<li><span style="background:#ffebe9;border:1px solid #d1242f;border-radius:4px;padding:4px 8px;font-size:13px;">⬇️ DOWNGRADE — recommended is older than running version, verify database compatibility</span></li>{{end}}
-  {{if .AvailableVersions}}<li><strong>Available:</strong> {{range $i, $v := .AvailableVersions}}{{if $i}}, {{end}}<code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{$v}}</code>{{end}}</li>{{end}}
+  <li><strong>File:</strong> <code style="{{$s.Code}}">{{.File}}</code></li>
+  {{if .RunningVersion}}{{if eq .RunningVersion "unknown"}}<li><strong>Running:</strong> <span style="{{$s.Unknown}}">latest (unknown)</span></li>{{else}}<li><strong>Running:</strong> <code style="{{$s.Code}}">{{.RunningVersion}}</code></li>{{end}}{{else}}<li><strong>Running:</strong> <span style="{{$s.Muted}}">not running</span></li>{{end}}
+  {{if .RecommendedVersion}}<li><strong>Recommended:</strong> <code style="{{$s.Code}}">{{.RecommendedVersion}}</code>{{if and .RecommendedAge (ne .RecommendedAge "age unknown")}} (released {{.RecommendedAge}} ago){{else if eq .RecommendedAge "age unknown"}} (age unknown){{end}}</li>{{end}}
+  {{if .MajorVersionJump}}<li><span style="{{$s.Boom}}">💥 Major version jump — review breaking changes before upgrading</span></li>{{end}}
+  {{if .IsDowngrade}}<li><span style="{{$s.Downgrade}}">⬇️ DOWNGRADE — recommended is older than running version, verify database compatibility</span></li>{{end}}
+  {{if .AvailableVersions}}<li><strong>Available:</strong> {{range $i, $v := .AvailableVersions}}{{if $i}}, {{end}}<code style="{{$s.Code}}">{{$v}}</code>{{end}}</li>{{end}}
 </ul>
 {{end}}{{end}}
 {{end}}
 
-<h2 style="font-size:20px;font-weight:600;margin-top:24px;color:#24292f;">Security</h2>
+<h2 style="{{.Styles.H2}}">Security</h2>
+
 {{if not .HasSecurityIssues}}
 <p>✅ No security issues found.</p>
 {{else}}
+  {{$s := .Styles}}
   {{if .HighIssues}}
-  <h3 style="font-size:16px;font-weight:600;margin-top:20px;color:#24292f;"><span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600;color:#fff;background:#cf222e;">HIGH</span></h3>
-  {{template "issueTable" .HighIssues}}
+  <h3 style="{{$s.H3}}"><span style="{{$s.BadgeHigh}}">HIGH</span></h3>
+  <table style="{{$s.Table}}">
+    <tr>
+      <th style="{{$s.Th}}">Issue</th>
+      <th style="{{$s.Th}}">Location</th>
+      <th style="{{$s.Th}}">Suggestion</th>
+    </tr>
+    {{range $i, $issue := $.HighIssues}}
+    <tr>
+      <td style="{{if odd $i}}{{$s.TdAlt}}{{else}}{{$s.Td}}{{end}}">{{$issue.Description}}</td>
+      <td style="{{if odd $i}}{{$s.TdAlt}}{{else}}{{$s.Td}}{{end}}"><code style="{{$s.Code}}">{{$issue.Location}}</code></td>
+      <td style="{{if odd $i}}{{$s.TdAlt}}{{else}}{{$s.Td}}{{end}}">{{$issue.Suggestion}}</td>
+    </tr>
+    {{end}}
+  </table>
   {{end}}
   {{if .MediumIssues}}
-  <h3 style="font-size:16px;font-weight:600;margin-top:20px;color:#24292f;"><span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600;color:#fff;background:#bf8700;">MEDIUM</span></h3>
-  {{template "issueTable" .MediumIssues}}
+  <h3 style="{{$s.H3}}"><span style="{{$s.BadgeMed}}">MEDIUM</span></h3>
+  <table style="{{$s.Table}}">
+    <tr>
+      <th style="{{$s.Th}}">Issue</th>
+      <th style="{{$s.Th}}">Location</th>
+      <th style="{{$s.Th}}">Suggestion</th>
+    </tr>
+    {{range $i, $issue := $.MediumIssues}}
+    <tr>
+      <td style="{{if odd $i}}{{$s.TdAlt}}{{else}}{{$s.Td}}{{end}}">{{$issue.Description}}</td>
+      <td style="{{if odd $i}}{{$s.TdAlt}}{{else}}{{$s.Td}}{{end}}"><code style="{{$s.Code}}">{{$issue.Location}}</code></td>
+      <td style="{{if odd $i}}{{$s.TdAlt}}{{else}}{{$s.Td}}{{end}}">{{$issue.Suggestion}}</td>
+    </tr>
+    {{end}}
+  </table>
   {{end}}
   {{if .LowIssues}}
-  <h3 style="font-size:16px;font-weight:600;margin-top:20px;color:#24292f;"><span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600;color:#fff;background:#0969da;">LOW</span></h3>
-  {{template "issueTable" .LowIssues}}
+  <h3 style="{{$s.H3}}"><span style="{{$s.BadgeLow}}">LOW</span></h3>
+  <table style="{{$s.Table}}">
+    <tr>
+      <th style="{{$s.Th}}">Issue</th>
+      <th style="{{$s.Th}}">Location</th>
+      <th style="{{$s.Th}}">Suggestion</th>
+    </tr>
+    {{range $i, $issue := $.LowIssues}}
+    <tr>
+      <td style="{{if odd $i}}{{$s.TdAlt}}{{else}}{{$s.Td}}{{end}}">{{$issue.Description}}</td>
+      <td style="{{if odd $i}}{{$s.TdAlt}}{{else}}{{$s.Td}}{{end}}"><code style="{{$s.Code}}">{{$issue.Location}}</code></td>
+      <td style="{{if odd $i}}{{$s.TdAlt}}{{else}}{{$s.Td}}{{end}}">{{$issue.Suggestion}}</td>
+    </tr>
+    {{end}}
+  </table>
   {{end}}
 {{end}}
 
 {{if .HasUnknownVersions}}
-<h2 style="font-size:20px;font-weight:600;margin-top:24px;color:#24292f;">Unknown Running Versions</h2>
-<p>The following containers are running <code>latest</code> but the exact version could not be determined. This is a common problem with <code>latest</code> tags — another reason to pin to a specific version.</p>
+<h2 style="{{.Styles.H2}}">Unknown Running Versions</h2>
+<p>The following containers are running <code style="{{.Styles.Code}}">latest</code> but the exact version could not be determined. This is a common problem with <code style="{{.Styles.Code}}">latest</code> tags — another reason to pin to a specific version.</p>
 <ul>
 {{range .Images}}{{if eq .RunningVersion "unknown"}}
-  <li><strong>{{.Image.Service}}</strong> — container: <code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{if .Image.ContainerName}}{{.Image.ContainerName}}{{else}}{{.Image.Service}}{{end}}</code> — image: <code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{.Image.Registry}}/{{.Image.Name}}</code></li>
+  <li><strong>{{.Image.Service}}</strong> — container: <code style="{{$.Styles.Code}}">{{if .Image.ContainerName}}{{.Image.ContainerName}}{{else}}{{.Image.Service}}{{end}}</code> — image: <code style="{{$.Styles.Code}}">{{.Image.Registry}}/{{.Image.Name}}</code></li>
 {{end}}{{end}}
 </ul>
 {{end}}
@@ -119,20 +165,3 @@
 </div>
 </body>
 </html>
-
-{{define "issueTable"}}
-<table style="border-collapse:collapse;width:100%;margin-bottom:16px;font-size:14px;">
-  <tr>
-    <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Issue</th>
-    <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Location</th>
-    <th style="background:#f6f8fa;border:1px solid #d0d7de;padding:8px 12px;text-align:left;">Suggestion</th>
-  </tr>
-  {{range $i, $issue := .}}
-  <tr>
-    <td style="border:1px solid #d0d7de;padding:8px 12px;{{if odd $i}}background:#f6f8fa;{{end}}">{{$issue.Description}}</td>
-    <td style="border:1px solid #d0d7de;padding:8px 12px;{{if odd $i}}background:#f6f8fa;{{end}}"><code style="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:13px;">{{$issue.Location}}</code></td>
-    <td style="border:1px solid #d0d7de;padding:8px 12px;{{if odd $i}}background:#f6f8fa;{{end}}">{{$issue.Suggestion}}</td>
-  </tr>
-  {{end}}
-</table>
-{{end}}
