@@ -21,6 +21,9 @@ var semverRegex = regexp.MustCompile(
 // longNumericSuffix catches tags like 13.1.0-24643103163
 var longNumericSuffix = regexp.MustCompile(`-\d{6,}$`)
 
+// gitHashSuffix catches tags like 2.18.3-f32cb56 (hex hash after dash)
+var gitHashSuffix = regexp.MustCompile(`-[0-9a-f]{7,}$`)
+
 // wordPrefixRegex catches tags like "develop-4.0.17" or "version-4.0.17"
 var wordPrefixRegex = regexp.MustCompile(`^[a-zA-Z]+-\d`)
 
@@ -53,6 +56,11 @@ func IsSemver(tag string) bool {
 
 	// Reject tags with very long numeric suffixes (build IDs)
 	if longNumericSuffix.MatchString(tag) {
+		return false
+	}
+
+	// Reject tags with git hash suffixes (e.g., 2.18.3-f32cb56)
+	if gitHashSuffix.MatchString(tag) {
 		return false
 	}
 
