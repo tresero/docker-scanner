@@ -22,7 +22,7 @@ type manifestConfig struct {
 }
 
 type manifestResponse struct {
-	Config   manifestConfig   `json:"config"`
+	Config   manifestConfig    `json:"config"`
 	History  []manifestHistory `json:"history"`
 }
 
@@ -42,6 +42,15 @@ func (r *GHCRRegistry) Supports(registry string) bool {
 	return registry == "ghcr.io" || registry == "lscr.io"
 }
 
+// tagsListURL builds the GHCR tags-list URL with an explicit page size.
+// GHCR silently truncates the default response to ~103 tags and does NOT
+// return a Link header for pagination, so any image with more tags loses
+// recent versions. Requesting n=1000 (the OCI-spec maximum that GHCR
+// honors in practice) returns the full tag set in one call.
+func tagsListURL(imageName string) string {
+	return fmt.Sprintf("https://ghcr.io/v2/%s/tags/list?n=1000", imageName)
+}
+
 func (r *GHCRRegistry) FetchVersions(image models.Image) ([]models.RegistryVersion, error) {
 	// lscr.io is a redirect to ghcr.io, so always query ghcr.io
 	token, err := getGHCRToken(image.Name)
@@ -49,9 +58,7 @@ func (r *GHCRRegistry) FetchVersions(image models.Image) ([]models.RegistryVersi
 		return nil, fmt.Errorf("failed to get GHCR token: %w", err)
 	}
 
-	url := fmt.Sprintf("https://ghcr.io/v2/%s/tags/list", image.Name)
-
-	body, err := httpGetWithAuth(url, "Bearer "+token)
+	body, err := httpGetWithAuth(tagsListURL(image.Name), "Bearer "+token)
 	if err != nil {
 		return nil, err
 	}
