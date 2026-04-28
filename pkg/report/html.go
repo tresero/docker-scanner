@@ -34,6 +34,15 @@ type Styles struct {
 	Muted      template.CSS
 }
 
+// LegendEntry describes one symbol or phrase used in the report so readers
+// can decode the table at a glance. Defined alongside the styles so adding
+// a new status symbol means updating one place, not three.
+type LegendEntry struct {
+	Symbol      template.HTML
+	SymbolStyle template.CSS
+	Meaning     string
+}
+
 var styles = Styles{
 	Body:      "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1a1a1a;max-width:900px;margin:0 auto;padding:20px;",
 	H1:        "font-size:24px;font-weight:600;border-bottom:2px solid #e1e4e8;padding-bottom:8px;",
@@ -56,6 +65,19 @@ var styles = Styles{
 	Muted:     "color:#656d76;",
 }
 
+// legendEntries is the single source of truth for what symbols mean in the
+// report. Add a new symbol to the template? Add it here too. The
+// TestGenerateHTML_LegendCoversAllSymbols test will catch omissions.
+var legendEntries = []LegendEntry{
+	{Symbol: "✅", SymbolStyle: styles.Ok, Meaning: "Image is pinned to a specific version"},
+	{Symbol: "⚠️", SymbolStyle: styles.Warn, Meaning: "Image uses a floating tag (latest, main, etc.)"},
+	{Symbol: "💥", SymbolStyle: "", Meaning: "Recommended version is a major version jump — review breaking changes"},
+	{Symbol: "⬇️", SymbolStyle: "", Meaning: "Recommended version is older than running version (downgrade risk)"},
+	{Symbol: "latest (unknown)", SymbolStyle: styles.Unknown, Meaning: "Container is running but its exact version could not be determined"},
+	{Symbol: "not running", SymbolStyle: styles.Muted, Meaning: "Image is defined in compose but no container is currently running"},
+	{Symbol: "(age unknown)", SymbolStyle: styles.Muted, Meaning: "Recommended version exists but its release date could not be fetched"},
+}
+
 // htmlData is the data structure passed to the HTML template
 type htmlData struct {
 	Styles              Styles
@@ -68,6 +90,7 @@ type htmlData struct {
 	HasSecurityIssues   bool
 	HasUnknownVersions  bool
 	Images              []models.ImageInfo
+	Legend              []LegendEntry
 	HighIssues          []models.SecurityIssue
 	MediumIssues        []models.SecurityIssue
 	LowIssues           []models.SecurityIssue
@@ -122,6 +145,7 @@ func buildHTMLData(results []models.ImageInfo) htmlData {
 		HasSecurityIssues:  len(allIssues) > 0,
 		HasUnknownVersions: hasUnknown,
 		Images:             results,
+		Legend:             legendEntries,
 		HighIssues:         filterBySeverity(allIssues, "high"),
 		MediumIssues:       filterBySeverity(allIssues, "medium"),
 		LowIssues:          filterBySeverity(allIssues, "low"),

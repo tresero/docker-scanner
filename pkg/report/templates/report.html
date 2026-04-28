@@ -36,6 +36,23 @@
   </tr>
 </table>
 
+<h2 style="{{.Styles.H2}}">Legend</h2>
+
+<table style="{{.Styles.Table}}">
+  <tr>
+    <th style="{{.Styles.Th}}">Symbol</th>
+    <th style="{{.Styles.Th}}">Meaning</th>
+  </tr>
+  {{range $i, $e := .Legend}}
+  <tr>
+    <td style="{{if odd $i}}{{$.Styles.TdAlt}}{{else}}{{$.Styles.Td}}{{end}}">
+      {{if $e.SymbolStyle}}<span style="{{$e.SymbolStyle}}">{{$e.Symbol}}</span>{{else}}{{$e.Symbol}}{{end}}
+    </td>
+    <td style="{{if odd $i}}{{$.Styles.TdAlt}}{{else}}{{$.Styles.Td}}{{end}}">{{$e.Meaning}}</td>
+  </tr>
+  {{end}}
+</table>
+
 <h2 style="{{.Styles.H2}}">Images</h2>
 
 <table style="{{.Styles.Table}}">

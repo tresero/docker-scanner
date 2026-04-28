@@ -6,24 +6,34 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
-// ComposeFile represents the structure of a docker-compose.yml
 type ComposeFile struct {
 	Services map[string]Service `yaml:"services"`
 }
 
-// Service represents a single service in a compose file
 type Service struct {
 	Image         string      `yaml:"image"`
 	ContainerName string      `yaml:"container_name"`
 	Environment   interface{} `yaml:"environment"`
 }
 
-// Parse reads a compose file and extracts image references
+// versionPattern matches tags that look like a pinned version.
+// Allows: 1, v1.2.3, 1.2.3-rc1, 1.2.3+build.5, 16-alpine, 2024.05.01, a1b2c3d
+// Rejects: latest, main, apache, bookworm, alpine, fpm
+var versionPattern = regexp.MustCompile(`^(?:v?\d+(?:[.\-+]\w+)*|[0-9a-f]{7,})$`)
+
+func looksLikeVersion(tag string) bool {
+	if tag == "" {
+		return false
+	}
+	return versionPattern.MatchString(tag)
+}
+
 func Parse(project models.Project) ([]models.ImageInfo, error) {
 	var results []models.ImageInfo
 
@@ -64,7 +74,7 @@ func parseFile(filePath string, projectName string) ([]models.ImageInfo, error) 
 		info := models.ImageInfo{
 			Image:      image,
 			File:       filePath,
-			UsesLatest: image.Tag == "latest",
+			UsesLatest: !looksLikeVersion(image.Tag),
 		}
 
 		results = append(results, info)
@@ -73,36 +83,29 @@ func parseFile(filePath string, projectName string) ([]models.ImageInfo, error) 
 	return results, nil
 }
 
-// parseImageRef breaks an image string into registry, name, and tag
 func parseImageRef(ref string) models.Image {
 	image := models.Image{
 		Registry: "docker.io",
 		Tag:      "latest",
 	}
 
-	// Split tag
 	tagSplit := strings.SplitN(ref, ":", 2)
 	namePart := tagSplit[0]
 	if len(tagSplit) > 1 {
 		image.Tag = tagSplit[1]
 	}
 
-	// Split registry from name
 	parts := strings.Split(namePart, "/")
 	if len(parts) >= 2 && (strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":")) {
 		image.Registry = parts[0]
 		image.Name = strings.Join(parts[1:], "/")
 	} else {
 		image.Name = namePart
-		// Docker Hub official images have no slash (e.g., "postgres")
-		// Docker Hub user images have one slash (e.g., "user/repo")
 	}
 
 	return image
 }
 
-// GetRawEnvironment returns the raw environment entries from a compose file
-// for use by security checks. Supports both list and map formats.
 func GetRawEnvironment(filePath string) (map[string][]string, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
@@ -126,7 +129,6 @@ func GetRawEnvironment(filePath string) (map[string][]string, error) {
 	return result, nil
 }
 
-// extractEnvVars handles both list and map environment formats
 func extractEnvVars(env interface{}) []string {
 	if env == nil {
 		return nil
@@ -136,14 +138,12 @@ func extractEnvVars(env interface{}) []string {
 
 	switch v := env.(type) {
 	case []interface{}:
-		// List format: - KEY=value or - KEY=${VAR}
 		for _, item := range v {
 			if s, ok := item.(string); ok {
 				entries = append(entries, s)
 			}
 		}
 	case map[string]interface{}:
-		// Map format: KEY: value
 		for key, val := range v {
 			entries = append(entries, fmt.Sprintf("%s=%v", key, val))
 		}
@@ -152,15 +152,11 @@ func extractEnvVars(env interface{}) []string {
 	return entries
 }
 
-// GetComposeDir returns the directory containing the compose file
 func GetComposeDir(filePath string) string {
 	return filepath.Dir(filePath)
 }
 
-// RunningStatus checks if a container is running and returns its version
-// Returns: version string, or "unknown" if running but version can't be determined, or "" if not running
 func GetRunningVersion(containerName string) string {
-	// Check if container is running
 	out, err := exec.Command("docker", "inspect", "--format",
 		"{{.State.Running}}", containerName).Output()
 	if err != nil {
@@ -172,8 +168,6 @@ func GetRunningVersion(containerName string) string {
 		return ""
 	}
 
-	// Container is running — try to get version
-	// First: get the image tag
 	out, err = exec.Command("docker", "inspect", "--format",
 		"{{.Config.Image}}", containerName).Output()
 	if err != nil {
@@ -182,7 +176,6 @@ func GetRunningVersion(containerName string) string {
 
 	image := strings.TrimSpace(string(out))
 
-	// If it's a sha256 digest, try getting the repo tag instead
 	if strings.HasPrefix(image, "sha256:") {
 		out, err = exec.Command("docker", "inspect", "--format",
 			"{{index .Image}}", containerName).Output()
@@ -199,13 +192,11 @@ func GetRunningVersion(containerName string) string {
 		image = strings.TrimSpace(string(out))
 	}
 
-	// Extract the tag
 	parts := strings.SplitN(image, ":", 2)
 	if len(parts) > 1 && parts[1] != "latest" {
 		return parts[1]
 	}
 
-	// Try OCI version label, but skip base image versions
 	out, err = exec.Command("docker", "inspect", "--format",
 		"{{index .Config.Labels \"org.opencontainers.image.version\"}}", containerName).Output()
 	if err != nil {

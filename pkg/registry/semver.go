@@ -33,13 +33,23 @@ var devSuffixes = []string{"-dev", "-rc", "-beta", "-alpha", "-snapshot", "-dist
 // archPrefixes are tag prefixes that indicate architecture-specific builds
 var archPrefixes = []string{"amd64-", "arm64v8-", "arm32v7-", "arm64-", "arm-"}
 
+// archSuffixes are tag suffixes that indicate architecture-specific builds
+var archSuffixes = []string{"-amd64", "-arm64", "-arm64v8", "-arm32v7", "-armhf", "-arm"}
+
 // IsSemver returns true if a tag looks like a real version number
 func IsSemver(tag string) bool {
 	lower := strings.ToLower(tag)
 
-	// Skip arch-specific tags
+	// Skip arch-specific prefix tags
 	for _, prefix := range archPrefixes {
 		if strings.HasPrefix(lower, prefix) {
+			return false
+		}
+	}
+
+	// Skip arch-specific suffix tags
+	for _, suffix := range archSuffixes {
+		if strings.HasSuffix(lower, suffix) {
 			return false
 		}
 	}

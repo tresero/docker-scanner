@@ -79,11 +79,18 @@ func main() {
 			images[i].SecurityIssues = append(images[i].SecurityIssues, issues...)
 
 			// Get running version from Docker
+			// Try container_name first, then service name, then compose default pattern
 			name := images[i].Image.ContainerName
 			if name == "" {
 				name = images[i].Image.Service
 			}
-			images[i].RunningVersion = parser.GetRunningVersion(name)
+			version := parser.GetRunningVersion(name)
+			if version == "" {
+				// Try compose default: <project>-<service>-1
+				composeName := images[i].Image.Project + "-" + images[i].Image.Service + "-1"
+				version = parser.GetRunningVersion(composeName)
+			}
+			images[i].RunningVersion = version
 		}
 
 		if !*skipRemote {

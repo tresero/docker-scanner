@@ -300,3 +300,84 @@ func TestGetRunningVersion_NonexistentContainer(t *testing.T) {
 		t.Errorf("expected empty string for nonexistent container, got %q", version)
 	}
 }
+
+// TestParse_FloatingTagsAreUnsafe pins down the rule: tags that don't look
+// like a recognizable version are flagged as unsafe (UsesLatest=true).
+// Compound tags like "16-alpine" are allowed because they're a common,
+// intentional pinning pattern.
+func TestParse_FloatingTagsAreUnsafe(t *testing.T) {
+	cases := []struct {
+		tag        string
+		usesLatest bool
+		why        string
+	}{
+		// Floating / unsafe tags
+		{"latest", true, "the canonical floating tag"},
+		{"main", true, "git branch name"},
+		{"master", true, "git branch name"},
+		{"dev", true, "channel name"},
+		{"stable", true, "floating channel pointer"},
+		{"nightly", true, "build channel"},
+		{"edge", true, "build channel"},
+		{"apache", true, "variant selector with no version"},
+		{"fpm", true, "variant selector"},
+		{"alpine", true, "OS variant with no version"},
+		{"bookworm", true, "OS codename"},
+		{"jammy", true, "OS codename"},
+
+		// Pinned / safe tags - semver
+		{"1", false, "major-only semver"},
+		{"1.2", false, "major.minor semver"},
+		{"1.2.3", false, "full semver"},
+		{"v1.2.3", false, "v-prefixed semver"},
+		{"1.2.3-rc1", false, "semver with pre-release"},
+		{"1.2.3-rc.1", false, "semver with dotted pre-release"},
+		{"1.2.3+build.5", false, "semver with build metadata"},
+
+		// Pinned / safe tags - compound (version + variant)
+		{"16-alpine", false, "major version with variant suffix"},
+		{"8.5-fpm", false, "version with variant suffix"},
+		{"1.2.3-bookworm", false, "full semver with OS variant"},
+		{"v1.2.3-arm64", false, "v-prefixed semver with arch suffix"},
+
+		// Pinned / safe tags - dates
+		{"2024.05.01", false, "dotted date"},
+		{"20240501", false, "compact date"},
+		{"2024-05-01", false, "ISO date"},
+		{"24.05", false, "year.month date (calver)"},
+		{"2026.3.0", false, "calver with patch"},
+
+		// Pinned / safe tags - git hash
+		{"a1b2c3d", false, "7-char git hash"},
+		{"abc12345", false, "8-char git hash"},
+		{"deadbeefcafe1234", false, "long git hash"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.tag, func(t *testing.T) {
+			dir := t.TempDir()
+			composePath := writeCompose(t, dir, `
+services:
+  app:
+    image: myapp:`+c.tag+`
+`)
+			project := models.Project{
+				Name:         "test",
+				Path:         dir,
+				ComposeFiles: []string{composePath},
+			}
+
+			images, err := Parse(project)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(images) != 1 {
+				t.Fatalf("expected 1 image, got %d", len(images))
+			}
+			got := images[0].UsesLatest
+			if got != c.usesLatest {
+				t.Errorf("tag %q: UsesLatest=%v, want %v (%s)", c.tag, got, c.usesLatest, c.why)
+			}
+		})
+	}
+}
