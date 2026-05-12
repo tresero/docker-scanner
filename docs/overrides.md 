@@ -1,0 +1,103 @@
+# Version source overrides
+
+For some images, the container registry doesn't cleanly expose what version you're actually running. The *Arr stack (Sonarr, Radarr, etc.) wraps upstream apps with their own build numbers like `4.0.17.2952-ls309`. cAdvisor moved registries. Grafana publishes clean tags but no manifest dates.
+
+For these cases, docker-scanner can look up the authoritative version at the upstream project's GitHub releases instead of the registry.
+
+## Bundled defaults
+
+docker-scanner ships with overrides for common home-server images. These work out of the box — no configuration needed. Current defaults cover:
+
+- **LinuxServer wrappers:** `sonarr`, `radarr`, `prowlarr`, `bazarr`, `lidarr`, `readarr`
+- **Monitoring:** `cadvisor`, `grafana`
+- **Other:** `open-webui`, `ollama`
+
+The authoritative list is in [`pkg/overrides/defaults.yml`](../pkg/overrides/defaults.yml).
+
+## Custom overrides
+
+To override the bundled defaults or add your own, create an overrides file:
+
+```bash
+mkdir -p ~/.config/docker-scanner
+nano ~/.config/docker-scanner/overrides.yml
+```
+
+### Lookup order
+
+Highest precedence first:
+
+1. `-overrides PATH` flag
+2. `$XDG_CONFIG_HOME/docker-scanner/overrides.yml`
+3. `~/.config/docker-scanner/overrides.yml`
+4. Bundled defaults (embedded in the binary)
+
+If you provide your own file, it **replaces** the bundled defaults entirely. To extend rather than replace, copy the bundled defaults as a starting point:
+
+```bash
+curl -o ~/.config/docker-scanner/overrides.yml \
+  https://raw.githubusercontent.com/tresero/docker-scanner/main/pkg/overrides/defaults.yml
+```
+
+Then edit to add your own entries.
+
+## File format
+
+```yaml
+overrides:
+  - image: docker.io/grafana/grafana
+    source: github_release
+    repo: grafana/grafana
+
+  - image: lscr.io/linuxserver/sonarr
+    source: github_release
+    repo: Sonarr/Sonarr
+```
+
+| Field | Description |
+| --- | --- |
+| `image` | Exact match against the image's `registry/name` from your compose file |
+| `source` | Only `github_release` is supported in v1 |
+| `repo` | The GitHub `owner/repo` to query |
+
+## GitHub rate limits
+
+Anonymous GitHub API requests are limited to 60/hour. Most home-server scans fit easily. For larger fleets, set a `GITHUB_TOKEN` env var (5000/hour authenticated):
+
+```bash
+export GITHUB_TOKEN=ghp_yourtoken
+./docker-scanner -dir ~/docker-projects
+```
+
+A read-only [fine-grained personal access token](https://github.com/settings/tokens?type=beta) with public-repo access is sufficient.
+
+## Limitations
+
+These are known limitations of the v1 implementation. Some will be addressed in v2.
+
+### No `💥` or `⬇️` markers on override results
+
+Upstream version strings like `4.0.17.2952` don't parse as semver, so the major-jump and downgrade comparisons are skipped. The recommendation is shown but without the warning markers.
+
+### Pre-release filter is off for overrides
+
+Some projects label every release as "pre-release" on GitHub (Sonarr, Radarr). Filtering pre-releases would silently break those projects entirely. v1 doesn't filter; v2 may add branch-aware filtering.
+
+### Upstream version may not match registry tag
+
+The override tells you what version exists upstream, but the registry's tag format may differ:
+
+- **LinuxServer** images use `-lsXXX` suffixes (e.g., upstream `4.0.17.2952` → registry `4.0.17.2952-ls309`)
+- **cAdvisor** moved from `gcr.io/cadvisor/cadvisor:v0.56.2` to `ghcr.io/google/cadvisor:0.56.2` (no `v` prefix)
+- **ollama** publishes upstream as `v0.21.2`, registry as `0.21.2` (no `v`)
+
+When pasting the recommended version into your compose file, you may need to adjust to match what the registry actually accepts.
+
+## Falling back to the registry
+
+If an override fails (GitHub unreachable, repo renamed, no eligible release), the scanner falls back to registry-based detection automatically. In verbose mode, you'll see why:
+
+```
+Using override (github_release → Sonarr/Sonarr) for lscr.io/linuxserver/sonarr
+Override failed for lscr.io/linuxserver/sonarr, falling back to registry: ...
+```
