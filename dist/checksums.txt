@@ -1,0 +1,4 @@
+fab371fedaf302cf31f3ecb3c17ecf62d5b8ae777bdc092f9e2972866e83d49a  docker-scanner-darwin-amd64
+7fb1e12cf4d23b0c341ea2f8dd747b0192eb7cd1500df7a47cd9ee565fba67d7  docker-scanner-linux-amd64
+a9191c88373d4b747a6922903fea6a56914ab4b14085c4df7ec5cffc4522105b  docker-scanner-linux-arm64
+86bdc7dfc79871c2ff5409e882b7980ffc4854fb0621100fadbf2455877d5fd0  docker-scanner-windows-amd64.exe

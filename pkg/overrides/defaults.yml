@@ -1,0 +1,48 @@
+# Bundled default overrides for docker-scanner.
+#
+# These are images where the container registry doesn't cleanly expose
+# version information, so the scanner looks at upstream GitHub releases
+# instead. Users can override the entire list by creating their own
+# overrides.yml at:
+#   $XDG_CONFIG_HOME/docker-scanner/overrides.yml
+#   ~/.config/docker-scanner/overrides.yml
+# or by passing --overrides PATH on the command line.
+
+overrides:
+  # *Arr stack — LinuxServer wraps upstream apps and tags with their own
+  # build numbers (e.g. 4.0.17.2952-ls309), defeating registry-based
+  # version detection.
+  - image: lscr.io/linuxserver/sonarr
+    source: github_release
+    repo: Sonarr/Sonarr
+  - image: lscr.io/linuxserver/radarr
+    source: github_release
+    repo: Radarr/Radarr
+  - image: lscr.io/linuxserver/prowlarr
+    source: github_release
+    repo: Prowlarr/Prowlarr
+  - image: lscr.io/linuxserver/bazarr
+    source: github_release
+    repo: morpheus65535/bazarr
+  - image: lscr.io/linuxserver/lidarr
+    source: github_release
+    repo: Lidarr/Lidarr
+  - image: lscr.io/linuxserver/readarr
+    source: github_release
+    repo: Readarr/Readarr
+
+  # Monitoring tools — registry version metadata is incomplete or absent.
+  - image: gcr.io/cadvisor/cadvisor
+    source: github_release
+    repo: google/cadvisor
+  - image: docker.io/grafana/grafana
+    source: github_release
+    repo: grafana/grafana
+
+  # Database tooling — pgadmin4 will need github_tag support in v2
+  # since the project tags but doesn't publish GitHub releases.
+
+  # Home-server staples.
+  - image: ghcr.io/open-webui/open-webui
+    source: github_release
+    repo: open-webui/open-webui
