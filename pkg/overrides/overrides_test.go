@@ -399,9 +399,9 @@ func TestLoad_FallsBackToBundledDefaults(t *testing.T) {
 	// embedded in the binary. The defaults file should at minimum parse
 	// cleanly and contain some entries.
 	cfg, err := Load(LoadOptions{
-		ExplicitPath:    "",
-		XDGConfigHome:   "/nonexistent",  // force fallback to bundled
-		HomeDir:         "/nonexistent",
+		ExplicitPath:  "",
+		XDGConfigHome: "/nonexistent", // force fallback to bundled
+		HomeDir:       "/nonexistent",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error loading bundled defaults: %v", err)
@@ -466,15 +466,19 @@ func TestLoad_ExplicitPathBeatsXDG(t *testing.T) {
 	// Precedence: explicit > XDG > home > bundled
 	dir := t.TempDir()
 
-	// Write a file at XDG location
 	xdgDir := filepath.Join(dir, "xdg", "docker-scanner")
-	os.MkdirAll(xdgDir, 0755)
+	if err := os.MkdirAll(xdgDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 	xdgPath := filepath.Join(xdgDir, "overrides.yml")
-	os.WriteFile(xdgPath, []byte("overrides:\n  - image: docker.io/xdg\n    source: github_release\n    repo: x/y\n"), 0644)
+	if err := os.WriteFile(xdgPath, []byte("overrides:\n  - image: docker.io/xdg\n    source: github_release\n    repo: x/y\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
-	// Write a different file at explicit location
 	explicitPath := filepath.Join(dir, "explicit.yml")
-	os.WriteFile(explicitPath, []byte("overrides:\n  - image: docker.io/explicit\n    source: github_release\n    repo: x/y\n"), 0644)
+	if err := os.WriteFile(explicitPath, []byte("overrides:\n  - image: docker.io/explicit\n    source: github_release\n    repo: x/y\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	cfg, err := Load(LoadOptions{
 		ExplicitPath:  explicitPath,
