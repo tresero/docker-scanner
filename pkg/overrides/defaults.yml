@@ -46,3 +46,9 @@ overrides:
   - image: ghcr.io/open-webui/open-webui
     source: github_release
     repo: open-webui/open-webui
+
+
+  # AI
+  - image: docker.io/ollama/ollama
+    source: github_release
+    repo: ollama/ollama
