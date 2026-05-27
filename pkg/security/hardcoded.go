@@ -42,11 +42,13 @@ func checkEntry(entry string, serviceName string, filePath string) []models.Secu
 	return nil
     }
 
-    // Check against all secret patterns
+    // Check against all secret patterns; report only the first match per entry
+    // to avoid duplicates when a variable name matches multiple patterns
+    // (e.g. AUTH_TOKEN matches both "api_token" and "credential").
     for patternName, pattern := range config.SecretPatterns {
 	if pattern.MatchString(entry) {
 	    varName := extractVarName(entry)
-	    issues = append(issues, models.SecurityIssue{
+	    return []models.SecurityIssue{{
 		Type:     "hardcoded_secret",
 		Severity: severity(patternName),
 		Description: fmt.Sprintf(
@@ -55,7 +57,7 @@ func checkEntry(entry string, serviceName string, filePath string) []models.Secu
 		),
 		Location:   fmt.Sprintf("%s -> %s", filePath, varName),
 		Suggestion: fmt.Sprintf("Use ${%s} and add to .env file", strings.ToUpper(varName)),
-	    })
+	    }}
 	}
     }
 

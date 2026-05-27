@@ -201,6 +201,31 @@ services:
     }
 }
 
+func TestHardcodedSecrets_NoDuplicatesForOverlappingPatterns(t *testing.T) {
+    dir := t.TempDir()
+    // AUTH_TOKEN matches both "api_token" (token) and "credential" (auth)
+    path := writeTestCompose(t, dir, `
+services:
+  app:
+    image: myapp:latest
+    environment:
+      - AUTH_TOKEN=supersecretvalue
+`)
+
+    checker := &HardcodedSecretsChecker{}
+    issues, err := checker.Check(path)
+    if err != nil {
+	t.Fatal(err)
+    }
+
+    if len(issues) != 1 {
+	t.Errorf("expected exactly 1 issue for overlapping patterns, got %d", len(issues))
+	for _, issue := range issues {
+	    t.Logf("  %s: %s", issue.Severity, issue.Description)
+	}
+    }
+}
+
 func TestRunAll(t *testing.T) {
     dir := t.TempDir()
     path := writeTestCompose(t, dir, `
