@@ -13,25 +13,29 @@ var templateFS embed.FS
 
 // Styles holds all inline CSS styles used in the HTML template
 type Styles struct {
-	Body       template.CSS
-	H1         template.CSS
-	H2         template.CSS
-	H3         template.CSS
-	Table      template.CSS
-	Th         template.CSS
-	Td         template.CSS
-	TdAlt      template.CSS
-	Code       template.CSS
-	Warn       template.CSS
-	Ok         template.CSS
-	Meta       template.CSS
-	BadgeHigh  template.CSS
-	BadgeMed   template.CSS
-	BadgeLow   template.CSS
-	Boom       template.CSS
-	Downgrade  template.CSS
-	Unknown    template.CSS
-	Muted      template.CSS
+	Body          template.CSS
+	H1            template.CSS
+	H2            template.CSS
+	H3            template.CSS
+	Table         template.CSS
+	Th            template.CSS
+	Td            template.CSS
+	TdAlt         template.CSS
+	Code          template.CSS
+	Warn          template.CSS
+	Ok            template.CSS
+	Meta          template.CSS
+	BadgeHigh     template.CSS
+	BadgeMed      template.CSS
+	BadgeLow      template.CSS
+	Boom          template.CSS
+	Downgrade     template.CSS
+	Unknown       template.CSS
+	Muted         template.CSS
+	RowFloating   template.CSS
+	RowUpgrade    template.CSS
+	RowGood       template.CSS
+	RowDowngrade  template.CSS
 }
 
 // LegendEntry describes one symbol or phrase used in the report so readers
@@ -60,19 +64,24 @@ var styles = Styles{
 	BadgeMed:  "display:inline-block;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600;color:#fff;background:#bf8700;",
 	BadgeLow:  "display:inline-block;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600;color:#fff;background:#0969da;",
 	Boom:      "background:#fff8c5;border:1px solid #d4a72c;border-radius:4px;padding:4px 8px;font-size:13px;",
-	Downgrade: "background:#ffebe9;border:1px solid #d1242f;border-radius:4px;padding:4px 8px;font-size:13px;",
-	Unknown:   "color:#bf8700;",
-	Muted:     "color:#656d76;",
+	Downgrade:    "background:#ffebe9;border:1px solid #d1242f;border-radius:4px;padding:4px 8px;font-size:13px;",
+	Unknown:      "color:#bf8700;",
+	Muted:        "color:#656d76;",
+	RowFloating:  "background:#ffebe9;",
+	RowUpgrade:   "background:#fff8c5;",
+	RowGood:      "background:#dafbe1;",
+	RowDowngrade: "background:#f5e6d3;",
 }
 
 // legendEntries is the single source of truth for what symbols mean in the
 // report. Add a new symbol to the template? Add it here too. The
 // TestGenerateHTML_LegendCoversAllSymbols test will catch omissions.
 var legendEntries = []LegendEntry{
-	{Symbol: "✅", SymbolStyle: styles.Ok, Meaning: "Image is pinned to a specific version"},
-	{Symbol: "⚠️", SymbolStyle: styles.Warn, Meaning: "Image uses a floating tag (latest, main, etc.)"},
+	{Symbol: "✅", SymbolStyle: styles.Ok, Meaning: "Image is pinned and up to date (green row)"},
+	{Symbol: "🟡", SymbolStyle: "", Meaning: "Upgrade available — a newer version exists (yellow row)"},
+	{Symbol: "🔴", SymbolStyle: styles.Warn, Meaning: "Image uses a floating tag like latest or main (red row)"},
+	{Symbol: "⬇️", SymbolStyle: "", Meaning: "Recommended version is older than running version — downgrade risk (beige row)"},
 	{Symbol: "💥", SymbolStyle: "", Meaning: "Recommended version is a major version jump — review breaking changes"},
-	{Symbol: "⬇️", SymbolStyle: "", Meaning: "Recommended version is older than running version (downgrade risk)"},
 	{Symbol: "latest (unknown)", SymbolStyle: styles.Unknown, Meaning: "Container is running but its exact version could not be determined"},
 	{Symbol: "not running", SymbolStyle: styles.Muted, Meaning: "Image is defined in compose but no container is currently running"},
 	{Symbol: "(age unknown)", SymbolStyle: styles.Muted, Meaning: "Recommended version exists but its release date could not be fetched"},
@@ -85,6 +94,9 @@ type htmlData struct {
 	ProjectCount        int
 	ImageCount          int
 	LatestCount         int
+	UpgradeCount        int
+	DowngradeCount      int
+	GoodCount           int
 	SecurityCount       int
 	HasLatest           bool
 	HasSecurityIssues   bool
@@ -102,6 +114,18 @@ func GenerateHTML(results []models.ImageInfo) string {
 
 	funcMap := template.FuncMap{
 		"odd": func(i int) bool { return i%2 == 1 },
+		"imageStatus": func(r models.ImageInfo) string {
+			switch ClassifyImage(r) {
+			case StatusFloating:
+				return "floating"
+			case StatusUpgrade:
+				return "upgrade"
+			case StatusDowngrade:
+				return "downgrade"
+			default:
+				return "good"
+			}
+		},
 	}
 
 	tmpl, err := template.New("report.html").Funcs(funcMap).ParseFS(templateFS, "templates/report.html")
@@ -119,29 +143,30 @@ func GenerateHTML(results []models.ImageInfo) string {
 
 func buildHTMLData(results []models.ImageInfo) htmlData {
 	projects := make(map[string]bool)
-	latestCount := 0
 	hasUnknown := false
 	var allIssues []models.SecurityIssue
 
 	for _, r := range results {
 		projects[r.Image.Project] = true
-		if r.UsesLatest {
-			latestCount++
-		}
 		if r.RunningVersion == "unknown" {
 			hasUnknown = true
 		}
 		allIssues = append(allIssues, r.SecurityIssues...)
 	}
 
+	floating, upgrades, downgrades, good := countByStatus(results)
+
 	return htmlData{
 		Styles:             styles,
 		Generated:          time.Now().Format("2006-01-02 15:04:05"),
 		ProjectCount:       len(projects),
 		ImageCount:         len(results),
-		LatestCount:        latestCount,
+		LatestCount:        floating,
+		UpgradeCount:       upgrades,
+		DowngradeCount:     downgrades,
+		GoodCount:          good,
 		SecurityCount:      len(allIssues),
-		HasLatest:          latestCount > 0,
+		HasLatest:          floating > 0,
 		HasSecurityIssues:  len(allIssues) > 0,
 		HasUnknownVersions: hasUnknown,
 		Images:             results,

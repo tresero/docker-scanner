@@ -102,7 +102,9 @@ func TestGenerateHTML_RendersSummaryCounts(t *testing.T) {
 
 	mustContain(t, out, "Projects scanned")
 	mustContain(t, out, "Images found")
-	mustContain(t, out, "Using <code")
+	mustContain(t, out, "Up to date")
+	mustContain(t, out, "Upgrades available")
+	mustContain(t, out, "Using floating tag")
 	mustContain(t, out, "Security issues")
 }
 
@@ -124,7 +126,8 @@ func TestGenerateHTML_RendersStatusSymbols(t *testing.T) {
 	out := GenerateHTML(fixtureResults())
 
 	mustContain(t, out, "✅")
-	mustContain(t, out, "⚠️")
+	mustContain(t, out, "🔴")
+	mustContain(t, out, "🟡")
 	mustContain(t, out, "💥")
 	mustContain(t, out, "⬇️")
 }
@@ -187,9 +190,10 @@ func TestGenerateHTML_LegendCoversAllSymbols(t *testing.T) {
 		needle string
 	}{
 		{"pinned check", "✅"},
-		{"floating tag warning", "⚠️"},
-		{"major version jump", "💥"},
+		{"upgrade available", "🟡"},
+		{"floating tag warning", "🔴"},
 		{"downgrade arrow", "⬇️"},
+		{"major version jump", "💥"},
 		{"latest unknown phrase", "latest (unknown)"},
 		{"not running phrase", "not running"},
 		{"age unknown phrase", "age unknown"},

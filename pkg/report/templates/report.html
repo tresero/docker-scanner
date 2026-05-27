@@ -23,14 +23,32 @@
     <td style="{{.Styles.TdAlt}}">{{.ImageCount}}</td>
   </tr>
   <tr>
-    <td style="{{.Styles.Td}}">Using <code style="{{.Styles.Code}}">latest</code> tag</td>
+    <td style="{{.Styles.Td}}">Up to date</td>
     <td style="{{.Styles.Td}}">
-      {{if gt .LatestCount 0}}<span style="{{.Styles.Warn}}">{{.LatestCount}} ⚠️</span>{{else}}{{.LatestCount}}{{end}}
+      {{if eq .GoodCount .ImageCount}}<span style="{{.Styles.Ok}}">{{.GoodCount}} ✅</span>{{else}}{{.GoodCount}}{{end}}
     </td>
   </tr>
   <tr>
-    <td style="{{.Styles.TdAlt}}">Security issues</td>
+    <td style="{{.Styles.TdAlt}}">Upgrades available</td>
     <td style="{{.Styles.TdAlt}}">
+      {{if gt .UpgradeCount 0}}<strong>{{.UpgradeCount}} 🟡</strong>{{else}}{{.UpgradeCount}}{{end}}
+    </td>
+  </tr>
+  <tr>
+    <td style="{{.Styles.Td}}">Using floating tag</td>
+    <td style="{{.Styles.Td}}">
+      {{if gt .LatestCount 0}}<span style="{{.Styles.Warn}}">{{.LatestCount}} 🔴</span>{{else}}{{.LatestCount}}{{end}}
+    </td>
+  </tr>
+  {{if gt .DowngradeCount 0}}
+  <tr>
+    <td style="{{.Styles.TdAlt}}">Downgrades</td>
+    <td style="{{.Styles.TdAlt}}"><strong>{{.DowngradeCount}} ⬇️</strong></td>
+  </tr>
+  {{end}}
+  <tr>
+    <td style="{{if gt .DowngradeCount 0}}{{.Styles.Td}}{{else}}{{.Styles.TdAlt}}{{end}}">Security issues</td>
+    <td style="{{if gt .DowngradeCount 0}}{{.Styles.Td}}{{else}}{{.Styles.TdAlt}}{{end}}">
       {{if gt .SecurityCount 0}}<span style="{{.Styles.Warn}}">{{.SecurityCount}} ⚠️</span>{{else}}{{.SecurityCount}}{{end}}
     </td>
   </tr>
@@ -67,18 +85,19 @@
   </tr>
   {{range $i, $r := .Images}}
   {{$s := $.Styles}}
-  <tr>
-    <td style="{{if odd $i}}{{$s.TdAlt}}{{else}}{{$s.Td}}{{end}}">
-      {{if $r.UsesLatest}}<span style="{{$s.Warn}}">⚠️</span>{{else}}<span style="{{$s.Ok}}">✅</span>{{end}}
+  {{$status := imageStatus $r}}
+  <tr style="{{if eq $status "floating"}}{{$s.RowFloating}}{{else if eq $status "upgrade"}}{{$s.RowUpgrade}}{{else if eq $status "downgrade"}}{{$s.RowDowngrade}}{{else}}{{$s.RowGood}}{{end}}">
+    <td style="{{$s.Td}}">
+      {{if eq $status "floating"}}<span style="{{$s.Warn}}">🔴</span>{{else if eq $status "upgrade"}}🟡{{else if eq $status "downgrade"}}⬇️{{else}}<span style="{{$s.Ok}}">✅</span>{{end}}
     </td>
-    <td style="{{if odd $i}}{{$s.TdAlt}}{{else}}{{$s.Td}}{{end}}">{{$r.Image.Project}}</td>
-    <td style="{{if odd $i}}{{$s.TdAlt}}{{else}}{{$s.Td}}{{end}}">{{$r.Image.Service}}</td>
-    <td style="{{if odd $i}}{{$s.TdAlt}}{{else}}{{$s.Td}}{{end}}"><code style="{{$s.Code}}">{{$r.Image.Registry}}/{{$r.Image.Name}}</code></td>
-    <td style="{{if odd $i}}{{$s.TdAlt}}{{else}}{{$s.Td}}{{end}}"><code style="{{$s.Code}}">{{$r.Image.Tag}}</code></td>
-    <td style="{{if odd $i}}{{$s.TdAlt}}{{else}}{{$s.Td}}{{end}}">
+    <td style="{{$s.Td}}">{{$r.Image.Project}}</td>
+    <td style="{{$s.Td}}">{{$r.Image.Service}}</td>
+    <td style="{{$s.Td}}"><code style="{{$s.Code}}">{{$r.Image.Registry}}/{{$r.Image.Name}}</code></td>
+    <td style="{{$s.Td}}"><code style="{{$s.Code}}">{{$r.Image.Tag}}</code></td>
+    <td style="{{$s.Td}}">
       {{if eq $r.RunningVersion "unknown"}}<span style="{{$s.Unknown}}">latest (unknown)</span>{{else if $r.RunningVersion}}<code style="{{$s.Code}}">{{$r.RunningVersion}}</code>{{else}}<span style="{{$s.Muted}}">not running</span>{{end}}
     </td>
-    <td style="{{if odd $i}}{{$s.TdAlt}}{{else}}{{$s.Td}}{{end}}">
+    <td style="{{$s.Td}}">
       {{if $r.RecommendedVersion}}<code style="{{$s.Code}}">{{$r.RecommendedVersion}}</code>{{if and $r.RecommendedAge (ne $r.RecommendedAge "age unknown")}} <small>({{$r.RecommendedAge}})</small>{{else if eq $r.RecommendedAge "age unknown"}} <small>(age unknown)</small>{{end}}{{if $r.MajorVersionJump}} 💥{{end}}{{if $r.IsDowngrade}} ⬇️{{end}}{{else}}—{{end}}
     </td>
   </tr>

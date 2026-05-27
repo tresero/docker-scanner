@@ -7,6 +7,47 @@ import (
 	"time"
 )
 
+// ImageStatus represents the visual status category for an image.
+type ImageStatus int
+
+const (
+	StatusGood      ImageStatus = iota // pinned, up to date
+	StatusUpgrade                      // pinned, newer version available
+	StatusDowngrade                    // recommended is older than running
+	StatusFloating                     // uses latest/main/etc.
+)
+
+// ClassifyImage returns the status category for color coding.
+func ClassifyImage(r models.ImageInfo) ImageStatus {
+	if r.UsesLatest {
+		return StatusFloating
+	}
+	if r.IsDowngrade {
+		return StatusDowngrade
+	}
+	if r.RecommendedVersion != "" && r.RecommendedVersion != r.Image.Tag {
+		return StatusUpgrade
+	}
+	return StatusGood
+}
+
+// countByStatus returns counts of each status category.
+func countByStatus(results []models.ImageInfo) (floating, upgrades, downgrades, good int) {
+	for _, r := range results {
+		switch ClassifyImage(r) {
+		case StatusFloating:
+			floating++
+		case StatusUpgrade:
+			upgrades++
+		case StatusDowngrade:
+			downgrades++
+		case StatusGood:
+			good++
+		}
+	}
+	return
+}
+
 // Generate produces a human-readable report from scan results
 func Generate(results []models.ImageInfo) string {
 	var sb strings.Builder
@@ -28,27 +69,38 @@ func writeHeader(sb *strings.Builder) {
 }
 
 func writeSummary(sb *strings.Builder, results []models.ImageInfo) {
-	latestCount := 0
 	securityCount := 0
 	projects := make(map[string]bool)
 
 	for _, r := range results {
-		if r.UsesLatest {
-			latestCount++
-		}
 		securityCount += len(r.SecurityIssues)
 		projects[r.Image.Project] = true
 	}
+
+	floating, upgrades, downgrades, good := countByStatus(results)
 
 	sb.WriteString("  SUMMARY\n")
 	sb.WriteString("  ───────────────────────────────────────\n")
 	sb.WriteString(fmt.Sprintf("  Projects scanned:    %d\n", len(projects)))
 	sb.WriteString(fmt.Sprintf("  Images found:        %d\n", len(results)))
-	sb.WriteString(fmt.Sprintf("  Using 'latest' tag:  %d", latestCount))
-	if latestCount > 0 {
-		sb.WriteString("  ⚠️")
+	sb.WriteString(fmt.Sprintf("  Up to date:          %d", good))
+	if good == len(results) {
+		sb.WriteString("  ✅")
 	}
 	sb.WriteString("\n")
+	sb.WriteString(fmt.Sprintf("  Upgrades available:  %d", upgrades))
+	if upgrades > 0 {
+		sb.WriteString("  🟡")
+	}
+	sb.WriteString("\n")
+	sb.WriteString(fmt.Sprintf("  Using floating tag:  %d", floating))
+	if floating > 0 {
+		sb.WriteString("  🔴")
+	}
+	sb.WriteString("\n")
+	if downgrades > 0 {
+		sb.WriteString(fmt.Sprintf("  Downgrades:          %d  ⬇️\n", downgrades))
+	}
 	sb.WriteString(fmt.Sprintf("  Security issues:     %d", securityCount))
 	if securityCount > 0 {
 		sb.WriteString("  ⚠️")
@@ -63,9 +115,16 @@ func writeImageDetails(sb *strings.Builder, results []models.ImageInfo) {
 	for _, r := range results {
 		fullImage := r.Image.Registry + "/" + r.Image.Name
 
-		status := "✓"
-		if r.UsesLatest {
-			status = "⚠️"
+		var status string
+		switch ClassifyImage(r) {
+		case StatusFloating:
+			status = "🔴"
+		case StatusUpgrade:
+			status = "🟡"
+		case StatusDowngrade:
+			status = "⬇️"
+		default:
+			status = "✅"
 		}
 
 		sb.WriteString(fmt.Sprintf("\n  %s  %s\n", status, fullImage))
@@ -82,10 +141,21 @@ func writeImageDetails(sb *strings.Builder, results []models.ImageInfo) {
 		sb.WriteString(fmt.Sprintf("      File:      %s\n", r.File))
 
 		if r.UsesLatest {
-			sb.WriteString("      ⚠️  Uses 'latest' — pin to a specific version\n")
-			if r.RecommendedVersion != "" {
-				sb.WriteString(fmt.Sprintf("      → Recommended: %s\n", r.RecommendedVersion))
+			sb.WriteString("      ⚠️  Uses floating tag — pin to a specific version\n")
+		}
+
+		if r.RecommendedVersion != "" {
+			rec := fmt.Sprintf("      → Recommended: %s", r.RecommendedVersion)
+			if r.RecommendedAge != "" && r.RecommendedAge != "age unknown" {
+				rec += fmt.Sprintf(" (%s)", r.RecommendedAge)
 			}
+			if r.MajorVersionJump {
+				rec += " 💥 major jump"
+			}
+			if r.IsDowngrade {
+				rec += " ⬇️ downgrade"
+			}
+			sb.WriteString(rec + "\n")
 		}
 
 		if len(r.AvailableVersions) > 0 {

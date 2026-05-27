@@ -27,21 +27,29 @@ func buildHeader(w *mdWriter) {
 }
 
 func buildSummary(w *mdWriter, results []models.ImageInfo) {
-	latestCount := 0
 	securityCount := 0
 	projects := make(map[string]bool)
 
 	for _, r := range results {
-		if r.UsesLatest {
-			latestCount++
-		}
 		securityCount += len(r.SecurityIssues)
 		projects[r.Image.Project] = true
 	}
 
-	latestStatus := fmt.Sprintf("%d", latestCount)
-	if latestCount > 0 {
-		latestStatus = fmt.Sprintf("**%d** :warning:", latestCount)
+	floating, upgrades, downgrades, good := countByStatus(results)
+
+	goodStatus := fmt.Sprintf("%d", good)
+	if good == len(results) {
+		goodStatus = fmt.Sprintf("%d :white_check_mark:", good)
+	}
+
+	upgradeStatus := fmt.Sprintf("%d", upgrades)
+	if upgrades > 0 {
+		upgradeStatus = fmt.Sprintf("**%d** :yellow_circle:", upgrades)
+	}
+
+	floatingStatus := fmt.Sprintf("%d", floating)
+	if floating > 0 {
+		floatingStatus = fmt.Sprintf("**%d** :red_circle:", floating)
 	}
 
 	securityStatus := fmt.Sprintf("%d", securityCount)
@@ -49,25 +57,36 @@ func buildSummary(w *mdWriter, results []models.ImageInfo) {
 		securityStatus = fmt.Sprintf("**%d** :warning:", securityCount)
 	}
 
+	rows := [][]string{
+		{"Projects scanned", fmt.Sprintf("%d", len(projects))},
+		{"Images found", fmt.Sprintf("%d", len(results))},
+		{"Up to date", goodStatus},
+		{"Upgrades available", upgradeStatus},
+		{"Using floating tag", floatingStatus},
+	}
+	if downgrades > 0 {
+		rows = append(rows, []string{"Downgrades", fmt.Sprintf("**%d** :arrow_down:", downgrades)})
+	}
+	rows = append(rows, []string{"Security issues", securityStatus})
+
 	w.H2("Summary")
-	w.Table(
-		[]string{"Metric", "Count"},
-		[][]string{
-			{"Projects scanned", fmt.Sprintf("%d", len(projects))},
-			{"Images found", fmt.Sprintf("%d", len(results))},
-			{"Using `latest` tag", latestStatus},
-			{"Security issues", securityStatus},
-		},
-	)
+	w.Table([]string{"Metric", "Count"}, rows)
 }
 
 func buildImageTable(w *mdWriter, results []models.ImageInfo) {
 	rows := make([][]string, 0, len(results))
 
 	for _, r := range results {
-		status := ":white_check_mark:"
-		if r.UsesLatest {
-			status = ":warning:"
+		var status string
+		switch ClassifyImage(r) {
+		case StatusFloating:
+			status = ":red_circle:"
+		case StatusUpgrade:
+			status = ":yellow_circle:"
+		case StatusDowngrade:
+			status = ":arrow_down:"
+		default:
+			status = ":white_check_mark:"
 		}
 
 		fullImage := fmt.Sprintf("`%s/%s`", r.Image.Registry, r.Image.Name)
