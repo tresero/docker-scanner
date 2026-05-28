@@ -158,6 +158,8 @@ func FilterAndSortTags(tags []string) []models.RegistryVersion {
 		versions = append(versions, models.RegistryVersion{Tag: tag})
 	}
 
+	versions = removePartialTags(versions)
+
 	sort.Slice(versions, func(i, j int) bool {
 		return CompareSemver(versions[i].Tag, versions[j].Tag) > 0
 	})
@@ -186,6 +188,8 @@ func FilterAndSortDockerHubTags(tags []DockerHubTag) []models.RegistryVersion {
 		versions = append(versions, v)
 	}
 
+	versions = removePartialTags(versions)
+
 	sort.Slice(versions, func(i, j int) bool {
 		return CompareSemver(versions[i].Tag, versions[j].Tag) > 0
 	})
@@ -211,6 +215,33 @@ func parseTimestamp(s string) time.Time {
 		}
 	}
 	return time.Time{}
+}
+
+// removePartialTags filters out 2-part version tags (e.g., "5.0", "4.6")
+// when a more specific 3-part tag with the same major.minor exists (e.g.,
+// "5.0.2", "4.6.0"). Partial tags are floating — Docker Hub updates them to
+// the latest patch in the series — so recommending them as pinned versions
+// is misleading.
+func removePartialTags(versions []models.RegistryVersion) []models.RegistryVersion {
+	// Collect major.minor pairs that have a 3-part version
+	hasSpecific := make(map[[2]int]bool)
+	for _, v := range versions {
+		_, _, patch := SemverParts(v.Tag)
+		if patch >= 0 {
+			maj, min, _ := SemverParts(v.Tag)
+			hasSpecific[[2]int{maj, min}] = true
+		}
+	}
+
+	var filtered []models.RegistryVersion
+	for _, v := range versions {
+		maj, min, patch := SemverParts(v.Tag)
+		if patch == -1 && hasSpecific[[2]int{maj, min}] {
+			continue // skip "5.0" when "5.0.2" exists
+		}
+		filtered = append(filtered, v)
+	}
+	return filtered
 }
 
 func isUnsafeTag(tag string) bool {

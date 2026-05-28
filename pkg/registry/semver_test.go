@@ -144,3 +144,40 @@ func TestFilterAndSortTags(t *testing.T) {
 		t.Errorf("expected third version to be 1.5.0, got %s", versions[2].Tag)
 	}
 }
+
+func TestFilterAndSortTags_RemovesPartialWhenSpecificExists(t *testing.T) {
+	tags := []string{
+		"5.0.2", "5.0.1", "5.0", "5.0.0",
+		"4.6.0", "4.6",
+	}
+
+	versions := FilterAndSortTags(tags)
+
+	for _, v := range versions {
+		if v.Tag == "5.0" || v.Tag == "4.6" {
+			t.Errorf("partial tag %q should have been filtered out", v.Tag)
+		}
+	}
+
+	// Should still include the specific versions
+	tagSet := make(map[string]bool)
+	for _, v := range versions {
+		tagSet[v.Tag] = true
+	}
+	for _, want := range []string{"5.0.2", "5.0.1", "5.0.0", "4.6.0"} {
+		if !tagSet[want] {
+			t.Errorf("expected %q to be present", want)
+		}
+	}
+}
+
+func TestFilterAndSortTags_KeepsPartialWhenNoSpecific(t *testing.T) {
+	// If a project only uses 2-part versioning, keep them
+	tags := []string{"1.22", "1.21", "1.20"}
+
+	versions := FilterAndSortTags(tags)
+
+	if len(versions) != 3 {
+		t.Fatalf("expected 3 versions, got %d: %v", len(versions), versions)
+	}
+}
