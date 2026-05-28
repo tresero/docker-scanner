@@ -4,35 +4,35 @@ import "time"
 
 // Image represents a Docker image reference
 type Image struct {
-	Registry      string // e.g., "docker.io", "ghcr.io"
-	Name          string // e.g., "serfriz/caddy-cloudflare"
-	Tag           string // e.g., "latest", "1.2.3"
-	Service       string // e.g., "caddy"
-	ContainerName string // e.g., "salsa_blanca" (from container_name in compose)
-	Project       string // e.g., "caddy"
+	Registry      string `json:"registry"`       // e.g., "docker.io", "ghcr.io"
+	Name          string `json:"name"`            // e.g., "serfriz/caddy-cloudflare"
+	Tag           string `json:"tag"`             // e.g., "latest", "1.2.3"
+	Service       string `json:"service"`         // e.g., "caddy"
+	ContainerName string `json:"container_name"`  // e.g., "salsa_blanca" (from container_name in compose)
+	Project       string `json:"project"`         // e.g., "caddy"
 }
 
 // ImageInfo contains image details and metadata
 type ImageInfo struct {
-	Image               Image
-	File                string   // Path to compose file
-	UsesLatest          bool
-	RunningVersion      string   // Actual version running in Docker
-	AvailableVersions   []string
-	RecommendedVersion  string
-	RecommendedAge      string // e.g., "5 days", "3 weeks"
-	MajorVersionJump    bool   // true if recommended is a different major version
-	IsDowngrade         bool   // true if recommended is older than running version
-	SecurityIssues      []SecurityIssue
+	Image               Image           `json:"image"`
+	File                string          `json:"file"`                            // Path to compose file
+	UsesLatest          bool            `json:"uses_latest"`
+	RunningVersion      string          `json:"running_version,omitempty"`       // Actual version running in Docker
+	AvailableVersions   []string        `json:"available_versions,omitempty"`
+	RecommendedVersion  string          `json:"recommended_version,omitempty"`
+	RecommendedAge      string          `json:"recommended_age,omitempty"`       // e.g., "5 days", "3 weeks"
+	MajorVersionJump    bool            `json:"major_version_jump,omitempty"`    // true if recommended is a different major version
+	IsDowngrade         bool            `json:"is_downgrade,omitempty"`          // true if recommended is older than running version
+	SecurityIssues      []SecurityIssue `json:"security_issues,omitempty"`
 }
 
 // SecurityIssue represents a security finding
 type SecurityIssue struct {
-	Type        string // e.g., "hardcoded_secret", "missing_envfile"
-	Severity    string // "high", "medium", "low"
-	Description string
-	Location    string // e.g., "CLOUDFLARE_API_TOKEN"
-	Suggestion  string
+	Type        string `json:"type"`                  // e.g., "hardcoded_secret", "missing_envfile"
+	Severity    string `json:"severity"`              // "high", "medium", "low"
+	Description string `json:"description"`
+	Location    string `json:"location"`              // e.g., "CLOUDFLARE_API_TOKEN"
+	Suggestion  string `json:"suggestion,omitempty"`
 }
 
 // Project represents a docker project directory

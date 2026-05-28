@@ -16,7 +16,7 @@ import (
 var (
 	scanDir       = flag.String("dir", ".", "Root directory to scan for compose files")
 	outputFile    = flag.String("output", "", "Output file for report (default: stdout)")
-	format        = flag.String("format", "text", "Report format: text, md, or html")
+	format        = flag.String("format", "text", "Report format: text, md, html, or json")
 	safeDays      = flag.Int("safe-days", 3, "Only recommend versions older than N days (72-hour rule)")
 	verbose       = flag.Bool("verbose", false, "Show detailed scan progress")
 	skipRemote    = flag.Bool("skip-remote", false, "Skip registry version lookups")
@@ -164,6 +164,8 @@ func main() {
 		output = report.GenerateMarkdown(allResults)
 	case "html":
 		output = report.GenerateHTML(allResults)
+	case "json":
+		output = report.GenerateJSON(allResults)
 	default:
 		output = report.Generate(allResults)
 	}
@@ -198,6 +200,8 @@ func printHelp() {
 	fmt.Println("Examples:")
 	fmt.Println("  docker-scanner -dir ~/docker-projects")
 	fmt.Println("  docker-scanner -dir ~/docker-projects -format html -output report.html")
+	fmt.Println("  docker-scanner -dir ~/docker-projects -format json | jq '.images[] | select(.uses_latest)'")
+
 	fmt.Println("  docker-scanner -dir ~/docker-projects -safe-days 7")
 	fmt.Println("  docker-scanner -dir ~/docker-projects -overrides ~/my-overrides.yml")
 	fmt.Println()
