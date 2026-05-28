@@ -16,7 +16,7 @@ type SafePickResult struct {
 }
 
 // preReleaseSuffixes are tags that should never be recommended
-var preReleaseSuffixes = []string{"-rc", "-beta", "-alpha", "-dev", "-snapshot", "-pre"}
+var preReleaseSuffixes = []string{"-rc", "-beta", "-alpha", "-dev", "-develop", "-snapshot", "-pre", "-nightly"}
 
 // isPreRelease returns true if a tag contains a pre-release suffix
 func isPreRelease(tag string) bool {

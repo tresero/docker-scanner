@@ -45,7 +45,7 @@ You can adjust this with `-safe-days`:
 ./docker-scanner -safe-days 0
 ```
 
-The rule applies to both the registry path and the override path — the scanner won't recommend a release younger than `safe-days` from either source.
+The rule applies to all version sources — the scanner won't recommend a release younger than `safe-days`.
 
 ## What gets scanned
 
@@ -65,12 +65,12 @@ The scanner automatically skips `node_modules`, `vendor`, `.git`, and other depe
 | Registry | Tag listing | Release dates |
 | --- | --- | --- |
 | Docker Hub (`docker.io`) | Yes | Yes |
-| GitHub Container Registry (`ghcr.io`) | Yes | Yes (via manifest) |
-| LinuxServer (`lscr.io`) | Yes (via GHCR) | Yes (via manifest) |
+| GitHub Container Registry (`ghcr.io`) | Yes (paginated) | Yes (via manifest) |
+| LinuxServer (`lscr.io`) | Yes (via Docker Hub) | Yes |
 | Google Container Registry (`gcr.io`) | Fallback | No |
 | Other OCI registries | Fallback | No |
 
-For registries marked "Fallback" (no manifest date support), the [overrides system](overrides.md) can point at upstream GitHub releases instead.
+For registries marked "Fallback" (no manifest date support), the optional [overrides system](overrides.md) can point at upstream GitHub releases instead.
 
 ### Security checks
 
@@ -86,10 +86,10 @@ The HTML report includes a legend, but for reference:
 
 | Symbol | Meaning |
 | --- | --- |
-| ✅ | Image is pinned to a specific version |
-| ⚠️ | Image uses a floating tag |
-| 💥 | Recommended version is a major version jump |
-| ⬇️ | Recommended version is older than running version |
-| `latest (unknown)` | Container running but version couldn't be determined |
+| ✅ | Up to date — pinned to the latest safe version |
+| 🟡 | Upgrade available — a newer safe version exists |
+| 🔴 | Floating tag — uses `latest` or other unpinned tag |
+| ⬇️ | Downgrade — recommended version is older than running version |
+| 💥 | Major version jump in the recommendation |
 | `not running` | Image defined but no container running |
 | `(age unknown)` | Recommended version exists but release date couldn't be fetched |

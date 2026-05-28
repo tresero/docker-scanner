@@ -67,32 +67,31 @@ func (r *GHCRRegistry) Supports(registry string) bool {
 }
 
 // tagsListURL builds the GHCR tags-list URL with an explicit page size.
-// GHCR silently truncates the default response to ~103 tags and does NOT
-// return a Link header for pagination, so any image with more tags loses
-// recent versions. Requesting n=1000 (the OCI-spec maximum that GHCR
-// honors in practice) returns the full tag set in one call.
 func tagsListURL(imageName string) string {
 	return fmt.Sprintf("https://ghcr.io/v2/%s/tags/list?n=1000", imageName)
 }
 
 func (r *GHCRRegistry) FetchVersions(image models.Image) ([]models.RegistryVersion, error) {
+	// lscr.io images are mirrored on Docker Hub. Docker Hub returns tags
+	// newest-first, which gives us current versions reliably regardless
+	// of total tag count. GHCR returns oldest-first and many lscr.io
+	// images have thousands of tags, making pagination impractical.
+	if image.Registry == "lscr.io" {
+		return fetchDockerHubMirror(image.Name)
+	}
+
 	// lscr.io is a redirect to ghcr.io, so always query ghcr.io
 	token, err := getGHCRToken(image.Name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get GHCR token: %w", err)
 	}
 
-	body, err := httpGetWithAuth(tagsListURL(image.Name), "Bearer "+token, "")
+	allTags, err := fetchAllGHCRTags(image.Name, image.Tag, token)
 	if err != nil {
 		return nil, err
 	}
 
-	var tagList ghcrTagList
-	if err := json.Unmarshal(body, &tagList); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	versions := FilterAndSortTags(tagList.Tags)
+	versions := FilterAndSortTags(allTags)
 
 	// Fetch manifest dates for the filtered tags (at most 10 calls).
 	// Each tag costs 3 HTTP requests to resolve the date through the
@@ -101,26 +100,30 @@ func (r *GHCRRegistry) FetchVersions(image models.Image) ([]models.RegistryVersi
 		versions[i].ReleasedAt = fetchManifestDate(image.Name, versions[i].Tag, token)
 	}
 
-	// Fallback: if LinuxServer image returned poor results, try Docker Hub
-	if isLinuxServerImage(image.Name) && len(versions) < 3 {
-		dockerHubName := "linuxserver/" + linuxServerAppName(image.Name)
-		hubURL := fmt.Sprintf(
-			"https://registry.hub.docker.com/v2/repositories/%s/tags/?page_size=100&ordering=last_updated",
-			dockerHubName,
-		)
-		hubBody, err := httpGet(hubURL)
-		if err == nil {
-			var result dockerHubResponse
-			if err := json.Unmarshal(hubBody, &result); err == nil {
-				hubVersions := FilterAndSortDockerHubTags(result.Results)
-				if len(hubVersions) > len(versions) {
-					versions = hubVersions
-				}
-			}
-		}
+	return versions, nil
+}
+
+// fetchDockerHubMirror gets tags from Docker Hub for lscr.io images.
+// Docker Hub returns tags ordered by last_updated (newest first), so we
+// always get current versions regardless of total tag count.
+func fetchDockerHubMirror(imageName string) ([]models.RegistryVersion, error) {
+	// lscr.io images use the format "linuxserver/<app>" on both registries
+	dockerHubName := imageName
+	hubURL := fmt.Sprintf(
+		"https://registry.hub.docker.com/v2/repositories/%s/tags/?page_size=100&ordering=last_updated",
+		dockerHubName,
+	)
+	hubBody, err := httpGet(hubURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query Docker Hub for %s: %w", dockerHubName, err)
 	}
 
-	return versions, nil
+	var result dockerHubResponse
+	if err := json.Unmarshal(hubBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse Docker Hub response: %w", err)
+	}
+
+	return FilterAndSortDockerHubTags(result.Results), nil
 }
 
 // pickAmd64ManifestDigest parses a manifest list and returns the digest of
@@ -173,19 +176,100 @@ func extractCreatedTimestamp(body []byte) (time.Time, error) {
 	return t, nil
 }
 
-// isLinuxServerImage checks if an image is from LinuxServer
-func isLinuxServerImage(name string) bool {
-	return strings.HasPrefix(name, "linuxserver/")
+
+// fetchAllGHCRTags retrieves tags from GHCR using a two-pass strategy.
+// GHCR returns tags in lexicographic order and caps each page at n=1000.
+// Images with many tags (like open-webui with 10k+ tags) would require
+// many pages to reach recent versions.
+//
+// Strategy:
+//  1. Fetch the first page (oldest tags)
+//  2. If the page is full (1000 tags) and currentTag is set, do a second
+//     request starting from the current tag to capture newer versions
+//  3. Follow a few pages of pagination from there
+func fetchAllGHCRTags(imageName, currentTag, token string) ([]string, error) {
+	const maxPages = 3
+	auth := "Bearer " + token
+
+	// First page: standard request
+	body, headers, err := httpGetWithAuthFull(tagsListURL(imageName), auth, "")
+	if err != nil {
+		return nil, err
+	}
+
+	var tagList ghcrTagList
+	if err := json.Unmarshal(body, &tagList); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	allTags := tagList.Tags
+
+	// If the first page is full, there are more tags. Jump ahead to the
+	// user's current tag to get nearby (newer) versions.
+	if len(tagList.Tags) >= 1000 && currentTag != "" && currentTag != "latest" {
+		jumpURL := fmt.Sprintf("https://ghcr.io/v2/%s/tags/list?n=1000&last=%s", imageName, currentTag)
+		for page := 0; page < maxPages; page++ {
+			body, headers, err = httpGetWithAuthFull(jumpURL, auth, "")
+			if err != nil {
+				break
+			}
+			var page2 ghcrTagList
+			if err := json.Unmarshal(body, &page2); err != nil {
+				break
+			}
+			allTags = append(allTags, page2.Tags...)
+
+			nextURL := parseLinkNext(headers.Get("Link"))
+			if nextURL == "" {
+				break
+			}
+			jumpURL = nextURL
+		}
+	} else if len(tagList.Tags) >= 1000 {
+		// No current tag to jump from — follow pagination normally
+		url := parseLinkNext(headers.Get("Link"))
+		for page := 0; page < maxPages && url != ""; page++ {
+			body, headers, err = httpGetWithAuthFull(url, auth, "")
+			if err != nil {
+				break
+			}
+			var pageN ghcrTagList
+			if err := json.Unmarshal(body, &pageN); err != nil {
+				break
+			}
+			allTags = append(allTags, pageN.Tags...)
+			url = parseLinkNext(headers.Get("Link"))
+		}
+	}
+
+	return allTags, nil
 }
 
-// linuxServerAppName extracts the app name from a LinuxServer image
-// e.g., "linuxserver/sonarr" -> "sonarr"
-func linuxServerAppName(name string) string {
-	parts := strings.Split(name, "/")
-	if len(parts) >= 2 {
-		return parts[len(parts)-1]
+// parseLinkNext extracts the "next" URL from an OCI Link header.
+// Format: </v2/name/tags/list?last=tag&n=1000>; rel="next"
+func parseLinkNext(header string) string {
+	if header == "" {
+		return ""
 	}
-	return name
+	// Link header format: <URL>; rel="next"
+	for _, part := range strings.Split(header, ",") {
+		part = strings.TrimSpace(part)
+		if !strings.Contains(part, `rel="next"`) {
+			continue
+		}
+		start := strings.Index(part, "<")
+		end := strings.Index(part, ">")
+		if start < 0 || end < 0 || end <= start {
+			continue
+		}
+		path := part[start+1 : end]
+		// GHCR returns relative paths; make them absolute
+		if strings.HasPrefix(path, "/") {
+			return "https://ghcr.io" + path
+		}
+		return path
+	}
+	return ""
 }
 
 func getGHCRToken(imageName string) (string, error) {
@@ -215,13 +299,19 @@ func getGHCRToken(imageName string) (string, error) {
 // is non-empty, it is set as the Accept header — required for GHCR
 // manifest endpoints which strictly enforce content negotiation.
 func httpGetWithAuth(url, auth, accept string) ([]byte, error) {
+	body, _, err := httpGetWithAuthFull(url, auth, accept)
+	return body, err
+}
+
+// httpGetWithAuthFull is like httpGetWithAuth but also returns response headers.
+func httpGetWithAuthFull(url, auth, accept string) ([]byte, http.Header, error) {
 	client := &http.Client{
 		Timeout: time.Duration(config.HTTPTimeoutSeconds) * time.Second,
 	}
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	req.Header.Set("Authorization", auth)
 	if accept != "" {
@@ -230,15 +320,16 @@ func httpGetWithAuth(url, auth, accept string) ([]byte, error) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query registry: %w", err)
+		return nil, nil, fmt.Errorf("failed to query registry: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("registry returned status %d", resp.StatusCode)
+		return nil, nil, fmt.Errorf("registry returned status %d", resp.StatusCode)
 	}
 
-	return io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	return body, resp.Header, err
 }
 
 // fetchManifestDate resolves the build timestamp for a tag through GHCR's

@@ -132,19 +132,20 @@ func TestFilterAndSortTags(t *testing.T) {
 
 	versions := FilterAndSortTags(tags)
 
-	if len(versions) != 4 {
-		t.Fatalf("expected 4 versions, got %d", len(versions))
+	// 2.0.0-rc1 is filtered (dev suffix), amd64-2.0.0 is filtered (arch prefix)
+	if len(versions) != 3 {
+		t.Fatalf("expected 3 versions, got %d: %v", len(versions), versions)
 	}
 
 	// Should be sorted descending
 	if versions[0].Tag != "2.0.0" {
 		t.Errorf("expected first version to be 2.0.0, got %s", versions[0].Tag)
 	}
-	if versions[1].Tag != "2.0.0-rc1" {
-		t.Errorf("expected second version to be 2.0.0-rc1, got %s", versions[1].Tag)
+	if versions[1].Tag != "1.5.0" {
+		t.Errorf("expected second version to be 1.5.0, got %s", versions[1].Tag)
 	}
-	if versions[2].Tag != "1.5.0" {
-		t.Errorf("expected third version to be 1.5.0, got %s", versions[2].Tag)
+	if versions[2].Tag != "1.0.0" {
+		t.Errorf("expected third version to be 1.0.0, got %s", versions[2].Tag)
 	}
 }
 

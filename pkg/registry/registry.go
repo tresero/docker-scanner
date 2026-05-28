@@ -36,12 +36,9 @@ func DefaultRegistries() []Registry {
     }
 }
 
-// MatchDockerTag finds a Docker registry tag that corresponds to an upstream
-// version string (e.g., from a GitHub release). It tries exact match, without
-// "v" prefix, stripped build metadata, and substring containment.
-// Returns "" if no match is found.
-func MatchDockerTag(versions []models.RegistryVersion, upstreamVersion string) string {
-    // Build a list of candidate strings to match against, most specific first.
+// upstreamCandidates returns a list of candidate Docker tag strings derived
+// from an upstream version (e.g., a GitHub release tag). Most specific first.
+func upstreamCandidates(upstreamVersion string) []string {
     clean := strings.TrimPrefix(upstreamVersion, "v")
     // Strip build metadata after "+" (e.g., "13.0.1+security-01" → "13.0.1")
     base := clean
@@ -53,6 +50,15 @@ func MatchDockerTag(versions []models.RegistryVersion, upstreamVersion string) s
     if base != clean {
 	candidates = append(candidates, base)
     }
+    return candidates
+}
+
+// MatchDockerTag finds a Docker registry tag that corresponds to an upstream
+// version string (e.g., from a GitHub release). It tries exact match, without
+// "v" prefix, stripped build metadata, and substring containment.
+// Returns "" if no match is found.
+func MatchDockerTag(versions []models.RegistryVersion, upstreamVersion string) string {
+    candidates := upstreamCandidates(upstreamVersion)
 
     // Pass 1: exact match
     for _, v := range versions {
@@ -74,3 +80,4 @@ func MatchDockerTag(versions []models.RegistryVersion, upstreamVersion string) s
 
     return ""
 }
+

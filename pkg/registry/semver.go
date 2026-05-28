@@ -28,7 +28,7 @@ var gitHashSuffix = regexp.MustCompile(`-[0-9a-f]{7,}$`)
 var wordPrefixRegex = regexp.MustCompile(`^[a-zA-Z]+-\d`)
 
 // devSuffixes are tags to deprioritize
-var devSuffixes = []string{"-dev", "-rc", "-beta", "-alpha", "-snapshot", "-distroless", "-busybox", "-ubuntu"}
+var devSuffixes = []string{"-dev", "-develop", "-rc", "-beta", "-alpha", "-snapshot", "-nightly", "-distroless", "-busybox", "-ubuntu"}
 
 // archPrefixes are tag prefixes that indicate architecture-specific builds
 var archPrefixes = []string{"amd64-", "arm64v8-", "arm32v7-", "arm64-", "arm-"}
@@ -77,7 +77,7 @@ func IsSemver(tag string) bool {
 	return true
 }
 
-// IsCleanTag returns true if the tag has no dev/rc/distroless suffix
+// IsCleanTag returns true if the tag has no dev/rc/nightly/distroless suffix
 func IsCleanTag(tag string) bool {
 	lower := strings.ToLower(tag)
 	for _, suffix := range devSuffixes {
@@ -86,6 +86,12 @@ func IsCleanTag(tag string) bool {
 		}
 	}
 	return true
+}
+
+// isCleanVersion returns true if a tag is both a valid semver and has no
+// dev/nightly/distroless suffix. Used to filter the available versions list.
+func isCleanVersion(tag string) bool {
+	return IsSemver(tag) && IsCleanTag(tag)
 }
 
 // SemverParts extracts major, minor, patch from a tag.
@@ -152,7 +158,7 @@ func FilterAndSortTags(tags []string) []models.RegistryVersion {
 	var versions []models.RegistryVersion
 
 	for _, tag := range tags {
-		if isUnsafeTag(tag) || !IsSemver(tag) {
+		if isUnsafeTag(tag) || !isCleanVersion(tag) {
 			continue
 		}
 		versions = append(versions, models.RegistryVersion{Tag: tag})
@@ -177,7 +183,7 @@ func FilterAndSortDockerHubTags(tags []DockerHubTag) []models.RegistryVersion {
 	var versions []models.RegistryVersion
 
 	for _, tag := range tags {
-		if isUnsafeTag(tag.Name) || !IsSemver(tag.Name) {
+		if isUnsafeTag(tag.Name) || !isCleanVersion(tag.Name) {
 			continue
 		}
 		v := models.RegistryVersion{
@@ -217,28 +223,56 @@ func parseTimestamp(s string) time.Time {
 	return time.Time{}
 }
 
-// removePartialTags filters out 2-part version tags (e.g., "5.0", "4.6")
-// when a more specific 3-part tag with the same major.minor exists (e.g.,
-// "5.0.2", "4.6.0"). Partial tags are floating — Docker Hub updates them to
-// the latest patch in the series — so recommending them as pinned versions
-// is misleading.
+// removePartialTags filters out version tags that are less specific than
+// other tags with the same prefix. For example:
+//   - "5.0" is removed when "5.0.2" exists (2-part when 3-part exists)
+//   - "6.1.1" is removed when "6.1.1.10360-ls303" exists (3-part when 4-part exists)
+//
+// Partial tags are floating — the registry updates them to the latest in
+// the series — so recommending them as pinned versions is misleading.
 func removePartialTags(versions []models.RegistryVersion) []models.RegistryVersion {
 	// Collect major.minor pairs that have a 3-part version
-	hasSpecific := make(map[[2]int]bool)
+	has3Part := make(map[[2]int]bool)
+	// Collect major.minor.patch triples that have a 4-part version
+	has4Part := make(map[[3]int]bool)
+
 	for _, v := range versions {
-		_, _, patch := SemverParts(v.Tag)
-		if patch >= 0 {
-			maj, min, _ := SemverParts(v.Tag)
-			hasSpecific[[2]int{maj, min}] = true
+		matches := semverRegex.FindStringSubmatch(v.Tag)
+		if matches == nil {
+			continue
+		}
+		maj, min := atoi(matches[1]), atoi(matches[2])
+		if matches[3] != "" {
+			has3Part[[2]int{maj, min}] = true
+			patch := atoi(matches[3])
+			if matches[4] != "" {
+				has4Part[[3]int{maj, min, patch}] = true
+			}
 		}
 	}
 
 	var filtered []models.RegistryVersion
 	for _, v := range versions {
-		maj, min, patch := SemverParts(v.Tag)
-		if patch == -1 && hasSpecific[[2]int{maj, min}] {
-			continue // skip "5.0" when "5.0.2" exists
+		matches := semverRegex.FindStringSubmatch(v.Tag)
+		if matches == nil {
+			filtered = append(filtered, v)
+			continue
 		}
+		maj, min := atoi(matches[1]), atoi(matches[2])
+
+		// 2-part tag: skip if a 3-part tag exists with same major.minor
+		if matches[3] == "" && has3Part[[2]int{maj, min}] {
+			continue
+		}
+
+		// 3-part tag with no suffix: skip if a 4-part tag exists with same major.minor.patch
+		if matches[3] != "" && matches[4] == "" && matches[5] == "" {
+			patch := atoi(matches[3])
+			if has4Part[[3]int{maj, min, patch}] {
+				continue
+			}
+		}
+
 		filtered = append(filtered, v)
 	}
 	return filtered

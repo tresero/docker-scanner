@@ -42,8 +42,11 @@ go build -o docker-scanner .
 # HTML report (good for email)
 ./docker-scanner -dir ~/docker-projects -format html -output report.html
 
-# Use a custom overrides file
-./docker-scanner -dir ~/docker-projects -overrides ~/my-overrides.yml
+# JSON output (pipe to jq, feed to monitoring)
+./docker-scanner -dir ~/docker-projects -format json | jq '.images[] | select(.uses_latest)'
+
+# More cautious — only recommend versions older than 7 days
+./docker-scanner -dir ~/docker-projects -safe-days 7
 ```
 
 ## Flags
@@ -51,11 +54,11 @@ go build -o docker-scanner .
 | Flag | Default | Description |
 | --- | --- | --- |
 | `-dir` | `.` | Root directory to scan for compose files |
-| `-format` | `text` | Output format: `text`, `md`, or `html` |
+| `-format` | `text` | Output format: `text`, `md`, `html`, or `json` |
 | `-output` | stdout | Write report to file instead of stdout |
 | `-safe-days` | `3` | Only recommend versions older than N days |
 | `-skip-remote` | `false` | Skip registry version lookups |
-| `-overrides` | bundled | Path to overrides YAML |
+| `-overrides` | none | Path to overrides YAML (opt-in, see [docs](docs/overrides.md)) |
 | `-verbose` | `false` | Show detailed scan progress |
 
 ## What you get
@@ -64,16 +67,17 @@ go build -o docker-scanner .
 - Flags floating tags (`latest`, `main`, `apache`, `bookworm`, etc.)
 - Shows actual running container versions via the Docker daemon
 - Detects hardcoded secrets, missing `.env` files
-- Recommends safer versions, with 💥 markers for major-version jumps and ⬇️ for downgrades
-- Text, Markdown, or HTML reports (the HTML one includes a symbol legend)
+- Recommends safer versions with real, pullable Docker tags
+- Status indicators: up to date, upgrade available, floating tag, downgrade
+- Text, Markdown, HTML, or JSON reports
 - Single binary, no runtime dependencies
 
 ## Documentation
 
 - **[Concepts](docs/concepts.md)** — How version detection works, what counts as a pinned tag, the 72-hour rule, supported registries
-- **[Version source overrides](docs/overrides.md)** — Using and extending the override system for images where registry-based detection doesn't work
+- **[Version source overrides](docs/overrides.md)** — Optional override system for images where registry-based detection doesn't work
 - **[Automated scanning with email](docs/automation.md)** — Cron + email setup for daily/weekly reports
-- **[Architecture and contributing](docs/architecture.md)** — Project structure, how to add registries, security checks, output formats, override sources
+- **[Architecture and contributing](docs/architecture.md)** — Project structure, how to add registries, security checks, output formats
 
 ## License
 

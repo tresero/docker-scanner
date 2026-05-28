@@ -13,9 +13,9 @@ docker-scanner/
 │   ├── parser/
 │   │   └── parser.go                # Extracts images from YAML, queries Docker daemon
 │   ├── registry/
-│   │   ├── registry.go              # Registry interface
+│   │   ├── registry.go              # Registry interface + tag matching
 │   │   ├── dockerhub.go             # Docker Hub implementation
-│   │   ├── ghcr.go                  # GHCR + lscr.io implementation
+│   │   ├── ghcr.go                  # GHCR + lscr.io implementation (with pagination)
 │   │   ├── generic.go               # OCI fallback
 │   │   ├── semver.go                # Version filtering and sorting
 │   │   └── safepick.go              # 72-hour rule logic
@@ -24,14 +24,15 @@ docker-scanner/
 │   │   ├── load.go                  # File location resolution
 │   │   ├── resolve.go               # Override → recommendation
 │   │   ├── http.go                  # HTTP getter with GITHUB_TOKEN support
-│   │   └── defaults.yml             # Bundled defaults (//go:embed)
+│   │   └── defaults.yml             # Bundled defaults (empty by default)
 │   ├── security/
 │   │   ├── checker.go               # Security check interface
 │   │   ├── envfile.go               # .env file checker
 │   │   └── hardcoded.go             # Hardcoded secrets checker
 │   └── report/
-│       ├── report.go                # Text formatter
+│       ├── report.go                # Text formatter + status classification
 │       ├── markdown.go              # Markdown formatter
+│       ├── json.go                  # JSON formatter
 │       ├── mdutil.go                # Markdown helpers
 │       ├── html.go                  # HTML formatter (html/template)
 │       └── templates/
@@ -49,10 +50,19 @@ For each project found by the scanner:
 2. **Get running version** for each image from the Docker daemon
 3. **Run security checks** against the compose file
 4. **For each image**:
-   - Check overrides — if matched, use that path
-   - Otherwise call the registry interface
+   - If an override is configured and matches, cross-reference the upstream version against actual Docker registry tags. Fall back to the registry path if no matching tag exists.
+   - Otherwise, query the registry directly for available versions
    - Apply `safeDays` cutoff to pick a recommendation
-5. **Format** results as text/markdown/HTML
+5. **Classify** each image: up to date, upgrade available, floating tag, or downgrade
+6. **Format** results as text/markdown/HTML/JSON
+
+## Registry strategies
+
+Different registries require different approaches:
+
+- **Docker Hub** returns tags ordered by `last_updated` (newest first), with timestamps. Straightforward.
+- **GHCR** returns tags in lexicographic order, oldest first, capped at 1000 per page. For images with many tags, the scanner uses a two-pass strategy: first page for old tags, then jumps to the user's current tag via the `last=` parameter to find newer versions nearby.
+- **lscr.io** images are routed to Docker Hub (where they're mirrored) to get newest-first ordering.
 
 ## Contributing
 
@@ -89,14 +99,6 @@ Add to `DefaultCheckers()`.
 
 Add a formatter in `pkg/report/` that takes `[]models.ImageInfo` and returns a string. Wire it into `main.go`'s format switch.
 
-### Adding to bundled override defaults
-
-Edit `pkg/overrides/defaults.yml` and submit a PR. Defaults should target images that:
-
-- Are widely used (especially in home-server setups)
-- Have version-detection issues on the registry path
-- Publish proper GitHub releases (not `github_tag` — that's v2)
-
 ### Adding a new override source
 
 Add a `Source` constant in `pkg/overrides/overrides.go`, register it in `validSources`, and add a `case` in the `Resolve` switch in `resolve.go`. Add tests for the parser following the existing `parseLatestRelease` pattern.
@@ -106,8 +108,6 @@ Add a `Source` constant in `pkg/overrides/overrides.go`, register it in `validSo
 ```bash
 go test ./...
 ```
-
-Test coverage is currently strongest in `pkg/overrides`, `pkg/parser`, and `pkg/registry`. Adding tests when extending is appreciated but not required for small changes.
 
 ## Cross-compiling for releases
 

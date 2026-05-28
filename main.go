@@ -119,21 +119,24 @@ func main() {
 						// matching Docker tag so we recommend something
 						// the user can actually pull.
 						versions, verr := registry.Lookup(registries, images[i].Image)
+						dockerTag := ""
 						if verr == nil {
-							dockerTag := registry.MatchDockerTag(versions, rec.Version)
-							if dockerTag != "" {
-								images[i].RecommendedVersion = dockerTag
-								images[i].RecommendedAge = rec.Age
-								if *verbose {
-									fmt.Fprintf(os.Stderr, "    Override %s matched Docker tag %s\n", rec.Version, dockerTag)
-								}
-								continue
+							dockerTag = registry.MatchDockerTag(versions, rec.Version)
+						}
+						if dockerTag != "" {
+							images[i].RecommendedVersion = dockerTag
+							images[i].RecommendedAge = rec.Age
+							if *verbose {
+								fmt.Fprintf(os.Stderr, "    Override %s matched Docker tag %s\n", rec.Version, dockerTag)
 							}
+							continue
 						}
+						// No matching Docker tag found — the upstream version
+						// may not be packaged yet. Fall through to the registry
+						// path which picks the best available Docker tag.
 						if *verbose {
-							fmt.Fprintf(os.Stderr, "    Override version %s has no matching Docker tag for %s, falling back to registry\n", rec.Version, imageName)
+							fmt.Fprintf(os.Stderr, "    Override %s has no matching Docker tag, falling back to registry\n", rec.Version)
 						}
-						// No matching Docker tag — fall through to registry path.
 					}
 				}
 
