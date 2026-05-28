@@ -1,6 +1,9 @@
 package registry
 
-import "testing"
+import (
+	"docker-scanner/pkg/models"
+	"testing"
+)
 
 func TestIsSemver(t *testing.T) {
 	tests := []struct {
@@ -179,5 +182,39 @@ func TestFilterAndSortTags_KeepsPartialWhenNoSpecific(t *testing.T) {
 
 	if len(versions) != 3 {
 		t.Fatalf("expected 3 versions, got %d: %v", len(versions), versions)
+	}
+}
+
+func TestMatchDockerTag(t *testing.T) {
+	versions := []models.RegistryVersion{
+		{Tag: "13.0.1"},
+		{Tag: "13.0.1-ubuntu"},
+		{Tag: "12.4.3"},
+		{Tag: "4.0.17.2952-ls309"},
+	}
+
+	tests := []struct {
+		upstream string
+		want     string
+	}{
+		// Exact match
+		{"13.0.1", "13.0.1"},
+		// Strip v prefix
+		{"v13.0.1", "13.0.1"},
+		// Strip build metadata
+		{"v13.0.1+security-01", "13.0.1"},
+		// Substring match (LinuxServer-style)
+		{"v4.0.17.2952", "4.0.17.2952-ls309"},
+		// No match
+		{"v99.0.0", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.upstream, func(t *testing.T) {
+			got := MatchDockerTag(versions, tt.upstream)
+			if got != tt.want {
+				t.Errorf("MatchDockerTag(%q) = %q, want %q", tt.upstream, got, tt.want)
+			}
+		})
 	}
 }

@@ -115,13 +115,25 @@ func main() {
 						}
 						// Fall through to registry path below.
 					} else {
-						images[i].RecommendedVersion = rec.Version
-						images[i].RecommendedAge = rec.Age
-						// MajorJump and IsDowngrade left at zero values —
-						// the override version may not be semver-parseable
-						// (build numbers etc.), so we don't attempt the
-						// comparison. Future work: add when sensible.
-						continue
+						// Override gave us an upstream version — find the
+						// matching Docker tag so we recommend something
+						// the user can actually pull.
+						versions, verr := registry.Lookup(registries, images[i].Image)
+						if verr == nil {
+							dockerTag := registry.MatchDockerTag(versions, rec.Version)
+							if dockerTag != "" {
+								images[i].RecommendedVersion = dockerTag
+								images[i].RecommendedAge = rec.Age
+								if *verbose {
+									fmt.Fprintf(os.Stderr, "    Override %s matched Docker tag %s\n", rec.Version, dockerTag)
+								}
+								continue
+							}
+						}
+						if *verbose {
+							fmt.Fprintf(os.Stderr, "    Override version %s has no matching Docker tag for %s, falling back to registry\n", rec.Version, imageName)
+						}
+						// No matching Docker tag — fall through to registry path.
 					}
 				}
 
