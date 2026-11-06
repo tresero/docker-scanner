@@ -68,3 +68,27 @@ func TestGenerateJSON_ExistingFieldsUnchanged(t *testing.T) {
 		t.Error("empty recommendation_note should be omitted")
 	}
 }
+
+func TestReports_ShowNewerMajor(t *testing.T) {
+	info := noteFixture()[0]
+	info.RecommendationNote = ""
+	info.RecommendedVersion = "11.4.9"
+	info.NewerMajorVersion = "13.0.2"
+
+	tests := []struct {
+		name     string
+		generate func([]models.ImageInfo) string
+	}{
+		{"text", Generate},
+		{"markdown", GenerateMarkdown},
+		{"html", GenerateHTML},
+		{"json", GenerateJSON},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if out := tt.generate([]models.ImageInfo{info}); !strings.Contains(out, "13.0.2") {
+				t.Errorf("%s report does not mention the newer major:\n%s", tt.name, out)
+			}
+		})
+	}
+}

@@ -25,6 +25,7 @@ type ImageInfo struct {
 	IsDowngrade         bool            `json:"is_downgrade,omitempty"`          // true if recommended is older than running version
 	SecurityIssues      []SecurityIssue `json:"security_issues,omitempty"`
 	RecommendationNote  string          `json:"recommendation_note,omitempty"`   // Why nothing newer is recommended, e.g., waiting for safe-days
+	NewerMajorVersion   string          `json:"newer_major_version,omitempty"`   // Newest safe tag on a higher major, when the pin's line is kept
 }
 
 // SecurityIssue represents a security finding

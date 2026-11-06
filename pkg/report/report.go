@@ -158,6 +158,10 @@ func writeImageDetails(sb *strings.Builder, results []models.ImageInfo) {
 			sb.WriteString(rec + "\n")
 		}
 
+		if r.NewerMajorVersion != "" {
+			sb.WriteString(fmt.Sprintf("      💥 Newer major: %s\n", r.NewerMajorVersion))
+		}
+
 		if r.RecommendationNote != "" {
 			sb.WriteString(fmt.Sprintf("      Note:      %s\n", r.RecommendationNote))
 		}

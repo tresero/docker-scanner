@@ -49,6 +49,15 @@ The rule applies to all version sources — the scanner won't recommend a releas
 
 If every tag with a known date is too new, the scanner recommends nothing and the report says why. Only when a registry provides no dates at all does it fall back to skipping the newest tags by position, shown as `(age unknown)`.
 
+## How a recommendation is chosen
+
+The scanner considers every usable tag from the registry response, and shows the newest 10 as available versions. How far it can move depends on what you pinned:
+
+| Pin | Recommendation |
+| --- | --- |
+| `11.4` (major.minor) | Newest safe tag on the 11.4 line. A newer major is reported separately with 💥 |
+| `11.4.8` (full version) | Newest safe tag. A different major is flagged with 💥 |
+
 ## What gets scanned
 
 ### Compose files

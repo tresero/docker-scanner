@@ -14,6 +14,10 @@ type SafePickResult struct {
 	Age       string
 	MajorJump bool
 	Note      string // why nothing newer is recommended; empty when there's nothing to explain
+
+	// NewerMajor is the newest safe tag on a higher major, set when the pin
+	// keeps the recommendation on its own line and so hides that major.
+	NewerMajor string
 }
 
 // PickInput is everything Pick needs. Now is injected so tests can use a
@@ -45,7 +49,8 @@ func PickSafeVersion(versions []models.RegistryVersion, currentTag string, safeD
 }
 
 // Pick selects the newest stable version published at least SafeDays ago and
-// detects major version jumps.
+// detects major version jumps. A major.minor pin stays on its own line, and
+// any newer major is reported separately in NewerMajor.
 //
 // Position fallback runs only when no stable tag has a date. If dates are
 // known and nothing is old enough, it recommends nothing and says why.
@@ -62,6 +67,41 @@ func Pick(in PickInput) SafePickResult {
 	}
 	if len(stable) == 0 {
 		return SafePickResult{Note: "only pre-release tags found"}
+	}
+
+	major, minor, onLine := pinLine(in.CurrentTag)
+	if !onLine {
+		return selectSafe(stable, in)
+	}
+
+	var line, higherMajor []models.RegistryVersion
+	for _, v := range stable {
+		tagMajor, tagMinor, _ := SemverParts(v.Tag)
+		switch {
+		case tagMajor == major && tagMinor == minor:
+			line = append(line, v)
+		case tagMajor > major:
+			higherMajor = append(higherMajor, v)
+		}
+	}
+
+	newerMajor := selectSafe(higherMajor, in).Version
+	if len(line) == 0 {
+		return SafePickResult{
+			Note:       fmt.Sprintf("no tags found on the %d.%d line", major, minor),
+			NewerMajor: newerMajor,
+		}
+	}
+
+	result := selectSafe(line, in)
+	result.NewerMajor = newerMajor
+	return result
+}
+
+// selectSafe applies the age rule to stable tags sorted newest first.
+func selectSafe(stable []models.RegistryVersion, in PickInput) SafePickResult {
+	if len(stable) == 0 {
+		return SafePickResult{}
 	}
 
 	cutoff := in.Now.AddDate(0, 0, -in.SafeDays)
@@ -89,6 +129,23 @@ func Pick(in PickInput) SafePickResult {
 
 	return SafePickResult{Note: fmt.Sprintf("newest is %s, pushed %s ago; waiting for -safe-days %d",
 		newestDated.Tag, formatAge(in.Now, newestDated.ReleasedAt), in.SafeDays)}
+}
+
+// pinLine returns the major and minor of a major.minor pin such as "11.4" or
+// "11.4-ubi". ok is false for any other kind of tag.
+func pinLine(tag string) (major, minor int, ok bool) {
+	major, minor, patch := SemverParts(tag)
+	return major, minor, major >= 0 && minor >= 0 && patch < 0
+}
+
+// fitsPin reports whether a tag can be recommended for the pin.
+func fitsPin(currentTag, tag string) bool {
+	major, minor, onLine := pinLine(currentTag)
+	if !onLine {
+		return true
+	}
+	tagMajor, tagMinor, _ := SemverParts(tag)
+	return tagMajor == major && tagMinor == minor
 }
 
 // positionFallback skips the newest N stable versions when no dates are available

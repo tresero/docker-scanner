@@ -104,6 +104,9 @@ func buildImageTable(w *mdWriter, results []models.ImageInfo) {
 				recommended += " :boom:"
 			}
 		}
+		if r.NewerMajorVersion != "" {
+			recommended += fmt.Sprintf(" :boom: newer major `%s`", r.NewerMajorVersion)
+		}
 		if r.RecommendationNote != "" {
 			recommended += " _" + r.RecommendationNote + "_"
 		}

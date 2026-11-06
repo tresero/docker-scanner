@@ -71,11 +71,7 @@ func (r *recommender) recommend(info *models.ImageInfo) {
 		return
 	}
 
-	var tags []string
-	for _, v := range versions {
-		tags = append(tags, v.Tag)
-	}
-	info.AvailableVersions = tags
+	info.AvailableVersions = registry.DisplayVersions(versions)
 
 	pick := registry.Pick(registry.PickInput{
 		Versions:   versions,
@@ -87,6 +83,7 @@ func (r *recommender) recommend(info *models.ImageInfo) {
 	info.RecommendedAge = pick.Age
 	info.MajorVersionJump = pick.MajorJump
 	info.RecommendationNote = pick.Note
+	info.NewerMajorVersion = pick.NewerMajor
 
 	if info.RunningVersion != "" && pick.Version != "" {
 		info.IsDowngrade = registry.CompareSemver(pick.Version, info.RunningVersion) < 0

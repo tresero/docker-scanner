@@ -152,7 +152,8 @@ func CompareSemver(a, b string) int {
 }
 
 // FilterAndSortTags takes raw tag strings, filters to valid semver,
-// removes unsafe tags, sorts descending, and limits results.
+// removes unsafe tags, and sorts descending. Picking needs the whole list; use
+// DisplayVersions to limit what's shown.
 // This is the single source of truth for tag processing.
 func FilterAndSortTags(tags []string) []models.RegistryVersion {
 	var versions []models.RegistryVersion
@@ -169,10 +170,6 @@ func FilterAndSortTags(tags []string) []models.RegistryVersion {
 	sort.Slice(versions, func(i, j int) bool {
 		return CompareSemver(versions[i].Tag, versions[j].Tag) > 0
 	})
-
-	if len(versions) > config.VersionFetchLimit {
-		versions = versions[:config.VersionFetchLimit]
-	}
 
 	return versions
 }
@@ -200,11 +197,20 @@ func FilterAndSortDockerHubTags(tags []DockerHubTag) []models.RegistryVersion {
 		return CompareSemver(versions[i].Tag, versions[j].Tag) > 0
 	})
 
-	if len(versions) > config.VersionFetchLimit {
-		versions = versions[:config.VersionFetchLimit]
-	}
-
 	return versions
+}
+
+// DisplayVersions returns the tags to show as available versions: the newest
+// config.VersionFetchLimit of them.
+func DisplayVersions(versions []models.RegistryVersion) []string {
+	var tags []string
+	for _, v := range versions {
+		if len(tags) == config.VersionFetchLimit {
+			break
+		}
+		tags = append(tags, v.Tag)
+	}
+	return tags
 }
 
 // parseTimestamp tries common registry timestamp formats

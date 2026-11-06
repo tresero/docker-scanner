@@ -93,14 +93,29 @@ func (r *GHCRRegistry) FetchVersions(image models.Image) ([]models.RegistryVersi
 
 	versions := FilterAndSortTags(allTags)
 
-	// Fetch manifest dates for the filtered tags (at most 10 calls).
-	// Each tag costs 3 HTTP requests to resolve the date through the
-	// manifest-list -> platform-manifest -> config-blob chain.
-	for i := range versions {
-		versions[i].ReleasedAt = fetchManifestDate(image.Name, versions[i].Tag, token)
-	}
+	fillReleaseDates(versions, image.Tag, func(tag string) time.Time {
+		return fetchManifestDate(image.Name, tag, token)
+	})
 
 	return versions, nil
+}
+
+// fillReleaseDates sets ReleasedAt using fetch, which is costly: each GHCR tag
+// takes 3 HTTP requests (manifest-list -> platform-manifest -> config-blob).
+// Only the newest config.VersionFetchLimit tags that fit the pin are dated, so
+// images with thousands of tags stay cheap. Pick treats the rest as undated.
+func fillReleaseDates(versions []models.RegistryVersion, currentTag string, fetch func(tag string) time.Time) {
+	fetched := 0
+	for i := range versions {
+		if fetched == config.VersionFetchLimit {
+			return
+		}
+		if !fitsPin(currentTag, versions[i].Tag) {
+			continue
+		}
+		versions[i].ReleasedAt = fetch(versions[i].Tag)
+		fetched++
+	}
 }
 
 // fetchDockerHubMirror gets tags from Docker Hub for lscr.io images.

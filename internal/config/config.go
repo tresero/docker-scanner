@@ -38,7 +38,8 @@ var UnsafeTagPatterns = []string{
 	"edge",
 }
 
-// VersionFetchLimit is the max number of versions to retrieve
+// VersionFetchLimit is the max number of versions to show as available, and
+// the max number of tags per image to fetch a date for on GHCR.
 var VersionFetchLimit = 10
 
 // HTTPTimeoutSeconds is the default timeout for registry queries
