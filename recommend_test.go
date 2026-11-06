@@ -4,6 +4,7 @@ import (
 	"docker-scanner/pkg/models"
 	"docker-scanner/pkg/overrides"
 	"docker-scanner/pkg/registry"
+	"docker-scanner/pkg/report"
 	"fmt"
 	"testing"
 	"time"
@@ -104,6 +105,7 @@ func TestRecommend_Override(t *testing.T) {
 	tests := []struct {
 		name     string
 		pin      string
+		running  string
 		versions []models.RegistryVersion
 		want     string
 		wantJump bool
@@ -116,6 +118,14 @@ func TestRecommend_Override(t *testing.T) {
 			wantJump: true,
 		},
 		{
+			name:     "override below the running version falls back to the registry path",
+			pin:      "1.0.0",
+			running:  "3.0.0",
+			versions: []models.RegistryVersion{{Tag: "3.0.0", ReleasedAt: old}, {Tag: "2.0.0", ReleasedAt: old}},
+			want:     "3.0.0",
+			wantJump: true,
+		},
+		{
 			name:     "override off the pinned line falls back to the registry path",
 			pin:      "1.4",
 			versions: []models.RegistryVersion{{Tag: "2.0.0", ReleasedAt: old}, {Tag: "1.4.9", ReleasedAt: old}},
@@ -124,13 +134,63 @@ func TestRecommend_Override(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			info := models.ImageInfo{Image: models.Image{Registry: "docker.io", Name: "app", Tag: tt.pin}}
+			info := models.ImageInfo{Image: models.Image{Registry: "docker.io", Name: "app", Tag: tt.pin}, RunningVersion: tt.running}
 			overrideRecommender(tt.versions, "docker.io/app").recommend(&info)
 			if info.RecommendedVersion != tt.want {
 				t.Errorf("RecommendedVersion = %q, want %q", info.RecommendedVersion, tt.want)
 			}
 			if info.MajorVersionJump != tt.wantJump {
 				t.Errorf("MajorVersionJump = %v, want %v", info.MajorVersionJump, tt.wantJump)
+			}
+		})
+	}
+}
+
+// TestRecommend_NeverBelowRunning checks the fields and status the report sees.
+func TestRecommend_NeverBelowRunning(t *testing.T) {
+	yesterday := testNow.AddDate(0, 0, -1)
+	yearAgo := testNow.AddDate(-1, 0, 0)
+	tests := []struct {
+		name       string
+		image      string
+		pin        string
+		running    string
+		versions   []models.RegistryVersion
+		wantStatus report.ImageStatus
+	}{
+		{
+			name:       "phpmyadmin re-pushed yesterday is up to date",
+			image:      "phpmyadmin",
+			pin:        "5.2.3",
+			running:    "5.2.3",
+			versions:   []models.RegistryVersion{{Tag: "5.2.3", ReleasedAt: yesterday}, {Tag: "5.2.2", ReleasedAt: yearAgo}},
+			wantStatus: report.StatusGood,
+		},
+		{
+			name:       "redis pushed today gets no move down",
+			image:      "redis",
+			pin:        "8.10.3-alpine",
+			running:    "8.10.3-alpine",
+			versions:   []models.RegistryVersion{{Tag: "8.10.3-alpine", ReleasedAt: testNow}, {Tag: "8.10.2-alpine", ReleasedAt: yearAgo}},
+			wantStatus: report.StatusGood,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			info := models.ImageInfo{
+				Image:          models.Image{Registry: "docker.io", Name: tt.image, Tag: tt.pin},
+				RunningVersion: tt.running,
+			}
+			newTestRecommender(tt.versions).recommend(&info)
+
+			if info.RecommendedVersion != "" {
+				t.Errorf("RecommendedVersion = %q, want empty", info.RecommendedVersion)
+			}
+			if info.IsDowngrade {
+				t.Error("IsDowngrade = true, want false")
+			}
+			if got := report.ClassifyImage(info); got != tt.wantStatus {
+				t.Errorf("ClassifyImage = %v, want %v", got, tt.wantStatus)
 			}
 		})
 	}

@@ -71,6 +71,7 @@ func TestExpectedResults(t *testing.T) {
 		name        string
 		tags        []DockerHubTag
 		pin         string
+		running     string
 		want        string   // expected recommendation; empty means none
 		wantMajor   string   // expected NewerMajor
 		wantInNote  []string // substrings the note must contain
@@ -85,10 +86,12 @@ func TestExpectedResults(t *testing.T) {
 			neverPicked: []string{"2.11.9-builder", "2.11.9-windowsservercore", "2.11.9-nanoserver", "2.11.8-builder"},
 		},
 		{
-			name: "caddy plain tag older than safe-days beyond the top 10 is picked",
-			tags: caddyWithOlderTags(),
-			pin:  "2.11.7",
-			want: "2.11.7",
+			name:        "caddy plain tag older than safe-days beyond the top 10 is picked",
+			tags:        caddyWithOlderTags(),
+			pin:         "2.11.7",
+			want:        "2.11.7",
+			wantInNote:  []string{"newest is 2.11.9", "safe-days 3"},
+			neverPicked: []string{"2.11.6", "2.11.9-builder"},
 		},
 		{
 			name: "caddy older pin upgrades to the plain tag beyond the top 10",
@@ -131,15 +134,40 @@ func TestExpectedResults(t *testing.T) {
 			wantMajor:   "13.0.2",
 			neverPicked: []string{"13.0.2", "12.3.2-ubi10", "11.8.5"},
 		},
+		{
+			name: "phpmyadmin running version re-pushed yesterday is up to date with no move to the older tag",
+			tags: []DockerHubTag{
+				hubTag("5.2.3", hoursAgo(24)),
+				hubTag("5.2.2", daysAgo(365)),
+			},
+			pin:         "5.2.3",
+			running:     "5.2.3",
+			want:        "",
+			wantInNote:  []string{"already on the newest version", "5.2.3"},
+			neverPicked: []string{"5.2.2"},
+		},
+		{
+			name: "redis running version pushed today gets no recommendation to go down",
+			tags: []DockerHubTag{
+				hubTag("8.10.3-alpine", hoursAgo(2)),
+				hubTag("8.10.2-alpine", daysAgo(30)),
+			},
+			pin:         "8.10.3-alpine",
+			running:     "8.10.3-alpine",
+			want:        "",
+			wantInNote:  []string{"already on the newest version"},
+			neverPicked: []string{"8.10.2-alpine"},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := Pick(PickInput{
-				Versions:   FilterAndSortDockerHubTags(tt.tags),
-				CurrentTag: tt.pin,
-				SafeDays:   3,
-				Now:        fixedNow,
+				Versions:       FilterAndSortDockerHubTags(tt.tags),
+				CurrentTag:     tt.pin,
+				RunningVersion: tt.running,
+				SafeDays:       3,
+				Now:            fixedNow,
 			})
 			if got.Version != tt.want {
 				t.Errorf("Version = %q, want %q (note %q)", got.Version, tt.want, got.Note)
@@ -735,25 +763,346 @@ func TestMatchOverride(t *testing.T) {
 		name     string
 		upstream string
 		pin      string
+		running  string
 		want     string
 		wantJump bool
 	}{
-		{"plain pin gets the plain tag", "v2.0.0", "1.0.0", "2.0.0", true},
-		{"variant pin keeps its variant", "v2.0.0", "1.0.0-alpine", "2.0.0-alpine", true},
-		{"same major is not a jump", "v13.0.2", "13.0.1", "13.0.2", false},
-		{"major.minor pin refuses a version off its line", "v13.0.2", "11.4", "", false},
-		{"major.minor pin accepts a version on its line", "v11.4.9", "11.4", "11.4.9", false},
-		{"major-only pin refuses a newer major", "v13.0.2", "11-alpine", "", false},
-		{"no matching tag", "v99.0.0", "1.0.0", "", false},
+		{"plain pin gets the plain tag", "v2.0.0", "1.0.0", "", "2.0.0", true},
+		{"variant pin keeps its variant", "v2.0.0", "1.0.0-alpine", "", "2.0.0-alpine", true},
+		{"same major is not a jump", "v13.0.2", "13.0.1", "", "13.0.2", false},
+		{"major.minor pin refuses a version off its line", "v13.0.2", "11.4", "", "", false},
+		{"major.minor pin accepts a version on its line", "v11.4.9", "11.4", "", "11.4.9", false},
+		{"major-only pin refuses a newer major", "v13.0.2", "11-alpine", "", "", false},
+		{"no matching tag", "v99.0.0", "1.0.0", "", "", false},
+		{"refuses a version below the pin", "v2.0.0", "13.0.2", "", "", false},
+		{"refuses a version below the running one", "v2.0.0", "1.0.0", "11.4.9", "", false},
+		{"accepts the running version itself", "v2.0.0", "1.0.0", "2.0.0", "2.0.0", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, jump := MatchOverride(versions, tt.upstream, tt.pin)
+			got, jump := MatchOverride(versions, tt.upstream, tt.pin, tt.running)
 			if got != tt.want {
 				t.Errorf("tag = %q, want %q", got, tt.want)
 			}
 			if jump != tt.wantJump {
 				t.Errorf("majorJump = %v, want %v", jump, tt.wantJump)
+			}
+		})
+	}
+}
+
+// TestPick_NeverBelowRunning covers the lower limit: the higher of the running
+// version and the pin.
+func TestPick_NeverBelowRunning(t *testing.T) {
+	tests := []struct {
+		name      string
+		pin       string
+		running   string
+		versions  []models.RegistryVersion
+		want      string
+		wantMajor string
+		wantNote  string // substring; empty means the note must be empty
+	}{
+		{
+			name:    "a newer old-enough version is still recommended",
+			pin:     "5.2.3",
+			running: "5.2.3",
+			versions: []models.RegistryVersion{
+				{Tag: "5.2.4", ReleasedAt: daysAgo(10)},
+				{Tag: "5.2.3", ReleasedAt: daysAgo(90)},
+			},
+			want: "5.2.4",
+		},
+		{
+			name:    "the running version is confirmed when it is old enough",
+			pin:     "5.2.3",
+			running: "5.2.3",
+			versions: []models.RegistryVersion{
+				{Tag: "5.2.3", ReleasedAt: daysAgo(90)},
+				{Tag: "5.2.2", ReleasedAt: daysAgo(365)},
+			},
+			want: "5.2.3",
+		},
+		{
+			name:    "a newer tag that is too new waits and does not go down",
+			pin:     "5.2.3",
+			running: "5.2.3",
+			versions: []models.RegistryVersion{
+				{Tag: "5.2.4", ReleasedAt: hoursAgo(1)},
+				{Tag: "5.2.3", ReleasedAt: hoursAgo(5)},
+				{Tag: "5.2.2", ReleasedAt: daysAgo(365)},
+			},
+			wantNote: "newest is 5.2.4, pushed 1 hour ago",
+		},
+		{
+			name:    "running ahead of the pin is the limit",
+			pin:     "5.2.1",
+			running: "5.2.3",
+			versions: []models.RegistryVersion{
+				{Tag: "5.2.3", ReleasedAt: daysAgo(30)},
+				{Tag: "5.2.2", ReleasedAt: daysAgo(40)},
+			},
+			want: "5.2.3",
+		},
+		{
+			name:    "pin ahead of running is the limit",
+			pin:     "5.2.3",
+			running: "5.2.1",
+			versions: []models.RegistryVersion{
+				{Tag: "5.2.3", ReleasedAt: hoursAgo(1)},
+				{Tag: "5.2.2", ReleasedAt: daysAgo(40)},
+			},
+			wantNote: "already on the newest version",
+		},
+		{
+			name: "a pin that isn't running is still the limit",
+			pin:  "5.2.3",
+			versions: []models.RegistryVersion{
+				{Tag: "5.2.3", ReleasedAt: hoursAgo(1)},
+				{Tag: "5.2.2", ReleasedAt: daysAgo(365)},
+			},
+			wantNote: "already on the newest version",
+		},
+		{
+			name:    "an unknown running version falls back to the pin",
+			pin:     "5.2.3",
+			running: "unknown",
+			versions: []models.RegistryVersion{
+				{Tag: "5.2.3", ReleasedAt: hoursAgo(1)},
+				{Tag: "5.2.2", ReleasedAt: daysAgo(365)},
+			},
+			wantNote: "already on the newest version",
+		},
+		{
+			name:    "a floating pin uses the running version as the limit",
+			pin:     "latest",
+			running: "1.5.0",
+			versions: []models.RegistryVersion{
+				{Tag: "1.6.0", ReleasedAt: hoursAgo(1)},
+				{Tag: "1.4.0", ReleasedAt: daysAgo(30)},
+			},
+			wantNote: "newest is 1.6.0",
+		},
+		{
+			name:    "a floating pin with a multi-part running version uses it as the limit",
+			pin:     "latest",
+			running: "7.0.4-260620-apache",
+			versions: []models.RegistryVersion{
+				{Tag: "6.9.0", ReleasedAt: daysAgo(30)},
+			},
+			wantNote: "newer than any matching tag",
+		},
+		{
+			name:    "a floating pin with an unreadable running version has no limit",
+			pin:     "latest",
+			running: "unknown",
+			versions: []models.RegistryVersion{
+				{Tag: "1.4.0", ReleasedAt: daysAgo(30)},
+			},
+			want: "1.4.0",
+		},
+		{
+			name:    "a word pin's running string is no limit",
+			pin:     "apache",
+			running: "apache",
+			versions: []models.RegistryVersion{
+				{Tag: "6.9.4-apache", ReleasedAt: daysAgo(30)},
+			},
+			want: "6.9.4-apache",
+		},
+		{
+			name:    "running newer than every tag says so",
+			pin:     "9.0.0",
+			running: "9.0.0",
+			versions: []models.RegistryVersion{
+				{Tag: "8.0.0", ReleasedAt: daysAgo(30)},
+			},
+			wantNote: "newer than any matching tag",
+		},
+		{
+			name:    "missing dates never go below running",
+			pin:     "2.0.0",
+			running: "2.0.0",
+			versions: []models.RegistryVersion{
+				{Tag: "2.0.0"},
+				{Tag: "1.9.0"},
+				{Tag: "1.8.0"},
+			},
+			want: "2.0.0",
+		},
+		{
+			name:     "empty tag list",
+			pin:      "2.0.0",
+			running:  "2.0.0",
+			wantNote: "no usable version tags",
+		},
+		{
+			name:    "only pre-release tags",
+			pin:     "2.0.0",
+			running: "2.0.0",
+			versions: []models.RegistryVersion{
+				{Tag: "3.0.0-rc1", ReleasedAt: daysAgo(30)},
+			},
+			wantNote: "only pre-release tags",
+		},
+		{
+			name:    "a lower 4th version part is below running",
+			pin:     "6.1.1.10360-ls300",
+			running: "6.1.1.10360-ls300",
+			versions: []models.RegistryVersion{
+				{Tag: "6.1.1.10000-ls290", ReleasedAt: daysAgo(30)},
+			},
+			wantNote: "newer than any matching tag",
+		},
+		{
+			name:    "a higher 4th version part is an upgrade",
+			pin:     "6.1.1.10360-ls300",
+			running: "6.1.1.10360-ls300",
+			versions: []models.RegistryVersion{
+				{Tag: "6.1.1.10400-ls305", ReleasedAt: daysAgo(30)},
+				{Tag: "6.1.1.10360-ls300", ReleasedAt: daysAgo(60)},
+			},
+			want: "6.1.1.10400-ls305",
+		},
+		{
+			name:    "a lower linuxserver build is below running",
+			pin:     "v1.5.6-ls345",
+			running: "v1.5.6-ls345",
+			versions: []models.RegistryVersion{
+				{Tag: "v1.5.6-ls340", ReleasedAt: daysAgo(30)},
+			},
+			wantNote: "newer than any matching tag",
+		},
+		{
+			name:    "a higher linuxserver build is an upgrade",
+			pin:     "v1.5.6-ls345",
+			running: "v1.5.6-ls345",
+			versions: []models.RegistryVersion{
+				{Tag: "v1.5.6-ls346", ReleasedAt: daysAgo(30)},
+				{Tag: "v1.5.6-ls345", ReleasedAt: daysAgo(40)},
+			},
+			want: "v1.5.6-ls346",
+		},
+		{
+			name:    "same version with a different variant isn't a downgrade",
+			pin:     "8.10.2-alpine",
+			running: "8.10.2",
+			versions: []models.RegistryVersion{
+				{Tag: "8.10.2-alpine", ReleasedAt: daysAgo(30)},
+			},
+			want: "8.10.2-alpine",
+		},
+		{
+			name:    "a newer major below running isn't reported",
+			pin:     "11.4",
+			running: "13.0.2",
+			versions: []models.RegistryVersion{
+				{Tag: "12.3.2", ReleasedAt: daysAgo(30)},
+				{Tag: "11.4.9", ReleasedAt: daysAgo(30)},
+			},
+			wantNote: "newer than any matching tag",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Pick(PickInput{Versions: tt.versions, CurrentTag: tt.pin, RunningVersion: tt.running, SafeDays: 3, Now: fixedNow})
+			if got.Version != tt.want {
+				t.Errorf("Version = %q, want %q (note %q)", got.Version, tt.want, got.Note)
+			}
+			if got.NewerMajor != tt.wantMajor {
+				t.Errorf("NewerMajor = %q, want %q", got.NewerMajor, tt.wantMajor)
+			}
+			if tt.wantNote == "" && got.Note != "" {
+				t.Errorf("Note = %q, want empty", got.Note)
+			}
+			if !strings.Contains(got.Note, tt.wantNote) {
+				t.Errorf("Note = %q, want it to mention %q", got.Note, tt.wantNote)
+			}
+		})
+	}
+}
+
+// TestPick_LinuxServerBuildCounterReset comes from a live sonarr scan: the build
+// counter restarted, so -ls2 is newer than -ls329. Registry order must decide.
+func TestPick_LinuxServerBuildCounterReset(t *testing.T) {
+	versions := FilterAndSortDockerHubTags([]DockerHubTag{
+		hubTag("4.0.20.3014-ls2", daysAgo(6)),
+		hubTag("4.0.20.3014-ls1", daysAgo(10)),
+		hubTag("4.0.20.3014-ls329", daysAgo(21)),
+		hubTag("4.0.20.3014-ls328", daysAgo(28)),
+	})
+	got := Pick(PickInput{Versions: versions, CurrentTag: "4.0.17.2952-ls309", SafeDays: 3, Now: fixedNow})
+	if got.Version != "4.0.20.3014-ls2" {
+		t.Errorf("Version = %q, want the most recently pushed build 4.0.20.3014-ls2", got.Version)
+	}
+}
+
+func TestNotBelow(t *testing.T) {
+	tests := []struct {
+		tag, floor string
+		want       bool
+	}{
+		{"1.2.3", "", true},
+		{"1.2.3", "1.2.3", true},
+		{"1.2.4", "1.2.3", true},
+		{"1.2.2", "1.2.3", false},
+		{"8.1.4-alpine", "8-alpine", true},
+		{"7.9.9-alpine", "8-alpine", false},
+		{"11.4.9", "11.4", true},
+		{"6.1.1.10000-ls290", "6.1.1.10360-ls300", false},
+		{"v1.5.6-ls346", "v1.5.6-ls345", true},
+		{"v1.5.6-ls9", "v1.5.6-ls10", false},
+		{"8.10.2-alpine", "8.10.2", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.tag+"_vs_"+tt.floor, func(t *testing.T) {
+			if got := notBelow(tt.tag, tt.floor); got != tt.want {
+				t.Errorf("notBelow(%q, %q) = %v, want %v", tt.tag, tt.floor, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestVersionFloor(t *testing.T) {
+	tests := []struct {
+		name         string
+		pin, running string
+		want         string
+	}{
+		{"pin only", "5.2.3", "", "5.2.3"},
+		{"running ahead of pin", "5.2.1", "5.2.3", "5.2.3"},
+		{"pin ahead of running", "5.2.3", "5.2.1", "5.2.3"},
+		{"floating pin uses running", "latest", "5.2.3", "5.2.3"},
+		{"unknown running uses pin", "5.2.3", "unknown", "5.2.3"},
+		{"neither is readable", "apache", "apache", ""},
+		{"neither is set", "", "", ""},
+		{"later linuxserver build is the limit", "v1.5.6-ls345", "v1.5.6-ls346", "v1.5.6-ls346"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := versionFloor(tt.pin, tt.running); got != tt.want {
+				t.Errorf("versionFloor(%q, %q) = %q, want %q", tt.pin, tt.running, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCompareSemver_BuildParts(t *testing.T) {
+	tests := []struct {
+		a, b string
+		want int
+	}{
+		{"6.1.1.10400", "6.1.1.10360", 1},
+		{"6.1.1.10360-ls300", "6.1.1.10400-ls305", -1},
+		{"1.2.3", "1.2.3.0", 0},
+		{"8.10.2-alpine", "8.10.2", -1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.a+"_vs_"+tt.b, func(t *testing.T) {
+			got := CompareSemver(tt.a, tt.b)
+			if (tt.want > 0 && got <= 0) || (tt.want < 0 && got >= 0) || (tt.want == 0 && got != 0) {
+				t.Errorf("CompareSemver(%q, %q) = %d, want sign %d", tt.a, tt.b, got, tt.want)
 			}
 		})
 	}
@@ -786,6 +1135,13 @@ func TestFillReleaseDates(t *testing.T) {
 			pin:       "11.4",
 			tags:      []string{"13.0.2", "12.3.2", "11.4.9", "11.4.8"},
 			wantCalls: []string{"11.4.9", "11.4.8"},
+			wantCount: 2,
+		},
+		{
+			name:      "tags below the pin are not dated",
+			pin:       "2.0.0",
+			tags:      []string{"3.0.0", "2.0.0", "1.9.0", "1.8.0"},
+			wantCalls: []string{"3.0.0", "2.0.0"},
 			wantCount: 2,
 		},
 		{

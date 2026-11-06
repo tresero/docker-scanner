@@ -47,7 +47,7 @@ func (r *recommender) recommend(info *models.ImageInfo) {
 			versions, verr := registry.Lookup(r.registries, info.Image)
 			dockerTag, majorJump := "", false
 			if verr == nil {
-				dockerTag, majorJump = registry.MatchOverride(versions, rec.Version, info.Image.Tag)
+				dockerTag, majorJump = registry.MatchOverride(versions, rec.Version, info.Image.Tag, info.RunningVersion)
 			}
 			if dockerTag != "" {
 				info.RecommendedVersion = dockerTag
@@ -75,18 +75,15 @@ func (r *recommender) recommend(info *models.ImageInfo) {
 	info.AvailableVersions = registry.DisplayVersions(versions)
 
 	pick := registry.Pick(registry.PickInput{
-		Versions:   versions,
-		CurrentTag: info.Image.Tag,
-		SafeDays:   r.safeDays,
-		Now:        r.now(),
+		Versions:       versions,
+		CurrentTag:     info.Image.Tag,
+		RunningVersion: info.RunningVersion,
+		SafeDays:       r.safeDays,
+		Now:            r.now(),
 	})
 	info.RecommendedVersion = pick.Version
 	info.RecommendedAge = pick.Age
 	info.MajorVersionJump = pick.MajorJump
 	info.RecommendationNote = pick.Note
 	info.NewerMajorVersion = pick.NewerMajor
-
-	if info.RunningVersion != "" && pick.Version != "" {
-		info.IsDowngrade = registry.CompareSemver(pick.Version, info.RunningVersion) < 0
-	}
 }

@@ -137,7 +137,8 @@ func SemverParts(tag string) (int, int, int) {
 	return major, minor, patch
 }
 
-// compareVersionNumbers compares only the version numbers of two tags.
+// compareVersionNumbers compares only the version numbers of two tags,
+// ignoring any variant.
 // Returns positive if a > b, negative if a < b, 0 if equal.
 func compareVersionNumbers(a, b string) int {
 	aMaj, aMin, aPat := SemverParts(a)
@@ -156,7 +157,32 @@ func compareVersionNumbers(a, b string) int {
 	if bPat == -1 {
 		bPat = 0
 	}
-	return aPat - bPat
+	if aPat != bPat {
+		return aPat - bPat
+	}
+
+	return fourthPart(a) - fourthPart(b)
+}
+
+// fourthPart returns the 4th version part (4.0.17.2952), or 0 if there isn't one.
+func fourthPart(tag string) int {
+	matches := versionRegex.FindStringSubmatch(tag)
+	if matches == nil || matches[4] == "" {
+		return 0
+	}
+	return atoi(matches[4])
+}
+
+// linuxServerBuildNumber returns the build number of a tag like 1.5.6-ls309, or
+// 0 if it has none. It's only for the lower limit, not for sorting: LinuxServer
+// restarts the counter, so -ls2 can be newer than -ls329 and registry order is
+// the better guide.
+func linuxServerBuildNumber(tag string) int {
+	matches := versionRegex.FindStringSubmatch(tag)
+	if matches == nil || !linuxServerBuild.MatchString(matches[5]) {
+		return 0
+	}
+	return atoi(matches[5][2:])
 }
 
 // CompareSemver compares two semver tags.

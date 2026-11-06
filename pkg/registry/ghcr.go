@@ -102,15 +102,17 @@ func (r *GHCRRegistry) FetchVersions(image models.Image) ([]models.RegistryVersi
 
 // fillReleaseDates sets ReleasedAt using fetch, which is costly: each GHCR tag
 // takes 3 HTTP requests (manifest-list -> platform-manifest -> config-blob).
-// Only the newest config.VersionFetchLimit tags that fit the pin are dated, so
-// images with thousands of tags stay cheap. Pick treats the rest as undated.
+// Only the newest config.VersionFetchLimit tags that fit the pin and aren't
+// below it are dated, so images with thousands of tags stay cheap. Pick treats
+// the rest as undated.
 func fillReleaseDates(versions []models.RegistryVersion, currentTag string, fetch func(tag string) time.Time) {
+	floor := versionFloor(currentTag, "")
 	fetched := 0
 	for i := range versions {
 		if fetched == config.VersionFetchLimit {
 			return
 		}
-		if !fitsPin(currentTag, versions[i].Tag) {
+		if !fitsPin(currentTag, versions[i].Tag) || !notBelow(versions[i].Tag, floor) {
 			continue
 		}
 		versions[i].ReleasedAt = fetch(versions[i].Tag)

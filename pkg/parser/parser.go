@@ -156,9 +156,15 @@ func GetComposeDir(filePath string) string {
 	return filepath.Dir(filePath)
 }
 
+// dockerOutput runs the docker CLI. It's a variable so tests can fake it
+// without a real Docker daemon.
+var dockerOutput = func(args ...string) ([]byte, error) {
+	return exec.Command("docker", args...).Output()
+}
+
 func GetRunningVersion(containerName string) string {
-	out, err := exec.Command("docker", "inspect", "--format",
-		"{{.State.Running}}", containerName).Output()
+	out, err := dockerOutput("inspect", "--format",
+		"{{.State.Running}}", containerName)
 	if err != nil {
 		return ""
 	}
@@ -168,8 +174,8 @@ func GetRunningVersion(containerName string) string {
 		return ""
 	}
 
-	out, err = exec.Command("docker", "inspect", "--format",
-		"{{.Config.Image}}", containerName).Output()
+	out, err = dockerOutput("inspect", "--format",
+		"{{.Config.Image}}", containerName)
 	if err != nil {
 		return "unknown"
 	}
@@ -177,15 +183,15 @@ func GetRunningVersion(containerName string) string {
 	image := strings.TrimSpace(string(out))
 
 	if strings.HasPrefix(image, "sha256:") {
-		out, err = exec.Command("docker", "inspect", "--format",
-			"{{index .Image}}", containerName).Output()
+		out, err = dockerOutput("inspect", "--format",
+			"{{index .Image}}", containerName)
 		if err != nil {
 			return "unknown"
 		}
 		imageID := strings.TrimSpace(string(out))
 
-		out, err = exec.Command("docker", "image", "inspect", "--format",
-			"{{index .RepoTags 0}}", imageID).Output()
+		out, err = dockerOutput("image", "inspect", "--format",
+			"{{index .RepoTags 0}}", imageID)
 		if err != nil {
 			return "unknown"
 		}
@@ -197,8 +203,8 @@ func GetRunningVersion(containerName string) string {
 		return parts[1]
 	}
 
-	out, err = exec.Command("docker", "inspect", "--format",
-		"{{index .Config.Labels \"org.opencontainers.image.version\"}}", containerName).Output()
+	out, err = dockerOutput("inspect", "--format",
+		"{{index .Config.Labels \"org.opencontainers.image.version\"}}", containerName)
 	if err != nil {
 		return "unknown"
 	}
@@ -208,8 +214,8 @@ func GetRunningVersion(containerName string) string {
 		return "unknown"
 	}
 
-	refName, _ := exec.Command("docker", "inspect", "--format",
-		"{{index .Config.Labels \"org.opencontainers.image.ref.name\"}}", containerName).Output()
+	refName, _ := dockerOutput("inspect", "--format",
+		"{{index .Config.Labels \"org.opencontainers.image.ref.name\"}}", containerName)
 	ref := strings.TrimSpace(string(refName))
 	if ref == "ubuntu" || ref == "debian" || ref == "alpine" {
 		return "unknown"

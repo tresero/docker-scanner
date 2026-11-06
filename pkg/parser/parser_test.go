@@ -2,6 +2,7 @@ package parser
 
 import (
 	"docker-scanner/pkg/models"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -294,10 +295,59 @@ services:
 	}
 }
 
-func TestGetRunningVersion_NonexistentContainer(t *testing.T) {
-	version := GetRunningVersion("nonexistent-container-xyz")
-	if version != "" {
-		t.Errorf("expected empty string for nonexistent container, got %q", version)
+// fakeDocker answers docker CLI calls by format string, so no test needs a real
+// Docker daemon. A format with no answer behaves like a failed command.
+func fakeDocker(t *testing.T, answers map[string]string) {
+	t.Helper()
+	original := dockerOutput
+	t.Cleanup(func() { dockerOutput = original })
+	dockerOutput = func(args ...string) ([]byte, error) {
+		for i, arg := range args {
+			if arg == "--format" && i+1 < len(args) {
+				if answer, ok := answers[args[i+1]]; ok {
+					return []byte(answer + "\n"), nil
+				}
+			}
+		}
+		return nil, errors.New("exit status 1")
+	}
+}
+
+func TestGetRunningVersion(t *testing.T) {
+	const (
+		running  = "{{.State.Running}}"
+		image    = "{{.Config.Image}}"
+		imageID  = "{{index .Image}}"
+		repoTags = "{{index .RepoTags 0}}"
+		version  = `{{index .Config.Labels "org.opencontainers.image.version"}}`
+		refName  = `{{index .Config.Labels "org.opencontainers.image.ref.name"}}`
+	)
+	tests := []struct {
+		name    string
+		answers map[string]string
+		want    string
+	}{
+		{"nonexistent container", nil, ""},
+		{"stopped container", map[string]string{running: "false"}, ""},
+		{"image inspect fails", map[string]string{running: "true"}, "unknown"},
+		{"pinned tag is returned", map[string]string{running: "true", image: "redis:8.10.3-alpine"}, "8.10.3-alpine"},
+		{"latest uses the version label", map[string]string{running: "true", image: "app:latest", version: "2.3.4"}, "2.3.4"},
+		{"no tag uses the version label", map[string]string{running: "true", image: "app", version: "2.3.4"}, "2.3.4"},
+		{"latest with no label is unknown", map[string]string{running: "true", image: "app:latest", version: ""}, "unknown"},
+		{"latest with no value is unknown", map[string]string{running: "true", image: "app:latest", version: "<no value>"}, "unknown"},
+		{"failed label lookup is unknown", map[string]string{running: "true", image: "app:latest"}, "unknown"},
+		{"a base image's version label is unknown", map[string]string{running: "true", image: "app:latest", version: "24.04", refName: "ubuntu"}, "unknown"},
+		{"digest image resolves through repo tags", map[string]string{running: "true", image: "sha256:abc", imageID: "sha256:def", repoTags: "app:1.2.3"}, "1.2.3"},
+		{"digest image with no id is unknown", map[string]string{running: "true", image: "sha256:abc"}, "unknown"},
+		{"digest image with no repo tags is unknown", map[string]string{running: "true", image: "sha256:abc", imageID: "sha256:def"}, "unknown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fakeDocker(t, tt.answers)
+			if got := GetRunningVersion("app"); got != tt.want {
+				t.Errorf("GetRunningVersion() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

@@ -22,7 +22,7 @@ type ImageInfo struct {
 	RecommendedVersion  string          `json:"recommended_version,omitempty"`
 	RecommendedAge      string          `json:"recommended_age,omitempty"`       // e.g., "5 days", "3 weeks"
 	MajorVersionJump    bool            `json:"major_version_jump,omitempty"`    // true if recommended is a different major version
-	IsDowngrade         bool            `json:"is_downgrade,omitempty"`          // true if recommended is older than running version
+	IsDowngrade         bool            `json:"is_downgrade,omitempty"`          // Kept for compatibility: recommendations are no longer below the running version
 	SecurityIssues      []SecurityIssue `json:"security_issues,omitempty"`
 	RecommendationNote  string          `json:"recommendation_note,omitempty"`   // Why nothing newer is recommended, e.g., waiting for safe-days
 	NewerMajorVersion   string          `json:"newer_major_version,omitempty"`   // Newest safe tag on a higher major, when the pin's line is kept

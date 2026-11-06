@@ -31,10 +31,11 @@ type SafePickResult struct {
 // PickInput is everything Pick needs. Now is injected so tests can use a
 // fixed clock.
 type PickInput struct {
-	Versions   []models.RegistryVersion
-	CurrentTag string
-	SafeDays   int
-	Now        time.Time
+	Versions       []models.RegistryVersion
+	CurrentTag     string
+	RunningVersion string // from the Docker daemon; empty when not running
+	SafeDays       int
+	Now            time.Time
 }
 
 // preReleaseSuffixes are tags that should never be recommended
@@ -59,7 +60,8 @@ func PickSafeVersion(versions []models.RegistryVersion, currentTag string, safeD
 // Pick selects the newest stable version published at least SafeDays ago and
 // detects major version jumps. It keeps the pin's variant. A major or
 // major.minor pin stays on its own line, and any newer major is reported
-// separately in NewerMajor.
+// separately in NewerMajor. It never recommends a version below the higher of
+// the pin and the running version.
 //
 // Position fallback runs only when no stable tag has a date. If dates are
 // known and nothing is old enough, it recommends nothing and says why.
@@ -86,9 +88,11 @@ func Pick(in PickInput) SafePickResult {
 		return SafePickResult{Note: "no plain version tags found"}
 	}
 
+	floor := versionFloor(in.CurrentTag, in.RunningVersion)
+
 	major, minor, onLine := pinLine(in.CurrentTag)
 	if !onLine {
-		return selectSafe(matching, in)
+		return selectFromFloor(matching, in, floor)
 	}
 
 	var line, higherMajor []models.RegistryVersion
@@ -97,7 +101,7 @@ func Pick(in PickInput) SafePickResult {
 		switch {
 		case onPinLine(v.Tag, major, minor):
 			line = append(line, v)
-		case tagMajor > major:
+		case tagMajor > major && compareVersionNumbers(v.Tag, floor) > 0:
 			higherMajor = append(higherMajor, v)
 		}
 	}
@@ -110,9 +114,77 @@ func Pick(in PickInput) SafePickResult {
 		}
 	}
 
-	result := selectSafe(line, in)
+	result := selectFromFloor(line, in, floor)
 	result.NewerMajor = newerMajor
 	return result
+}
+
+// selectFromFloor applies the age rule to the candidates at or above floor, and
+// explains the result when it isn't an upgrade.
+func selectFromFloor(candidates []models.RegistryVersion, in PickInput, floor string) SafePickResult {
+	if floor == "" {
+		return selectSafe(candidates, in)
+	}
+
+	var eligible []models.RegistryVersion
+	for _, v := range candidates {
+		if notBelow(v.Tag, floor) {
+			eligible = append(eligible, v)
+		}
+	}
+	if len(eligible) == 0 {
+		return SafePickResult{Note: fmt.Sprintf("%s is newer than any matching tag", floor)}
+	}
+
+	result := selectSafe(eligible, in)
+	newest := eligible[0]
+
+	if compareVersionNumbers(newest.Tag, floor) == 0 {
+		// Nothing newer exists, so the tag's age doesn't matter: rebuilds reset
+		// it, and the only alternatives are older versions.
+		if result.Version == "" {
+			result.Note = fmt.Sprintf("already on the newest version (%s)", floor)
+		}
+		return result
+	}
+
+	// A newer tag exists but we're staying put, so say what we're waiting for.
+	if result.Version != "" && compareVersionNumbers(result.Version, floor) == 0 && !newest.ReleasedAt.IsZero() {
+		result.Note = waitingNote(newest, in)
+	}
+	return result
+}
+
+// versionFloor returns the higher of the pin and the running version, or "" if
+// neither is a readable version.
+func versionFloor(currentTag, runningVersion string) string {
+	floor := ""
+	for _, tag := range []string{currentTag, runningVersion} {
+		if major, _, _ := SemverParts(tag); major < 0 {
+			continue
+		}
+		if floor == "" || !notBelow(floor, tag) {
+			floor = tag
+		}
+	}
+	return floor
+}
+
+// notBelow reports whether a tag is at or above the lower limit, counting
+// LinuxServer build numbers within the same version.
+func notBelow(tag, floor string) bool {
+	if floor == "" {
+		return true
+	}
+	if c := compareVersionNumbers(tag, floor); c != 0 {
+		return c > 0
+	}
+	return linuxServerBuildNumber(tag) >= linuxServerBuildNumber(floor)
+}
+
+func waitingNote(newest models.RegistryVersion, in PickInput) string {
+	return fmt.Sprintf("newest is %s, pushed %s ago; waiting for -safe-days %d",
+		newest.Tag, formatAge(in.Now, newest.ReleasedAt), in.SafeDays)
 }
 
 // selectSafe applies the age rule to stable tags sorted newest first.
@@ -144,8 +216,7 @@ func selectSafe(stable []models.RegistryVersion, in PickInput) SafePickResult {
 		return positionFallback(stable, in.CurrentTag, in.SafeDays, in.Now)
 	}
 
-	return SafePickResult{Note: fmt.Sprintf("newest is %s, pushed %s ago; waiting for -safe-days %d",
-		newestDated.Tag, formatAge(in.Now, newestDated.ReleasedAt), in.SafeDays)}
+	return SafePickResult{Note: waitingNote(*newestDated, in)}
 }
 
 // filterVariant keeps the tags that fit the pin's variant, sorted newest first
@@ -243,10 +314,12 @@ func lineName(major, minor int) string {
 
 // MatchOverride finds the registry tag for an upstream override version,
 // holding it to the same pin rules as Pick. Returns "" if no tag qualifies.
-func MatchOverride(versions []models.RegistryVersion, upstreamVersion, currentTag string) (tag string, majorJump bool) {
+func MatchOverride(versions []models.RegistryVersion, upstreamVersion, currentTag, runningVersion string) (tag string, majorJump bool) {
+	floor := versionFloor(currentTag, runningVersion)
+
 	var fitting []models.RegistryVersion
 	for _, v := range versions {
-		if fitsPin(currentTag, v.Tag) {
+		if fitsPin(currentTag, v.Tag) && notBelow(v.Tag, floor) {
 			fitting = append(fitting, v)
 		}
 	}

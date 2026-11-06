@@ -24,7 +24,7 @@ This is intentionally an allowlist rather than a denylist. New floating tags app
 When Docker is available on the host, docker-scanner queries the Docker daemon to show the actual version running for each container. This is critical for identifying situations where:
 
 - `latest` silently pulled a pre-release or nightly build
-- The running version is newer than the recommended safe version (downgrade risk ⬇️)
+- The running version is ahead of every safe version, so nothing is recommended
 - A major version jump has occurred (💥)
 
 Some images don't expose their version through standard labels or tags. These are shown as `latest (unknown)` in the report — which is itself a reason to pin to a specific version.
@@ -47,6 +47,8 @@ You can adjust this with `-safe-days`:
 
 The rule applies to all version sources — the scanner won't recommend a release younger than `safe-days`.
 
+Tag ages come from the registry's push date, not the release date. A rebuilt image counts as new, so an upgrade to a months-old version can be held back after a re-push.
+
 If every tag with a known date is too new, the scanner recommends nothing and the report says why. Only when a registry provides no dates at all does it fall back to skipping the newest tags by position, shown as `(age unknown)`.
 
 ## How a recommendation is chosen
@@ -58,6 +60,8 @@ The scanner considers every usable tag from the registry response, and shows the
 | `8-alpine` (major) | Newest safe tag on 8.x. A newer major is reported separately with 💥 |
 | `11.4` (major.minor) | Newest safe tag on the 11.4 line. A newer major is reported separately with 💥 |
 | `11.4.8` (full version) | Newest safe tag. A different major is flagged with 💥 |
+
+A recommendation is never below the higher of your pin and the running version. If you're already on the newest version it's reported as up to date, whatever the tag's age.
 
 The pinned variant is kept: `8-alpine` only gets `-alpine` tags, and `latest` or a plain version only gets plain tags. The one exception is moving between Alpine releases, such as `-alpine3.23` to `-alpine3.24`, and only at a higher version.
 
@@ -103,7 +107,6 @@ The HTML report includes a legend, but for reference:
 | ✅ | Up to date — pinned to the latest safe version |
 | 🟡 | Upgrade available — a newer safe version exists |
 | 🔴 | Floating tag — uses `latest` or other unpinned tag |
-| ⬇️ | Downgrade — recommended version is older than running version |
 | 💥 | Major version jump in the recommendation |
 | `not running` | Image defined but no container running |
 | `(age unknown)` | Recommended version exists but release date couldn't be fetched |
