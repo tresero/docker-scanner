@@ -47,6 +47,8 @@ You can adjust this with `-safe-days`:
 
 The rule applies to all version sources — the scanner won't recommend a release younger than `safe-days`.
 
+If every tag with a known date is too new, the scanner recommends nothing and the report says why. Only when a registry provides no dates at all does it fall back to skipping the newest tags by position, shown as `(age unknown)`.
+
 ## What gets scanned
 
 ### Compose files

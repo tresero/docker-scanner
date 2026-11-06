@@ -98,7 +98,7 @@
       {{if eq $r.RunningVersion "unknown"}}<span style="{{$s.Unknown}}">latest (unknown)</span>{{else if $r.RunningVersion}}<code style="{{$s.Code}}">{{$r.RunningVersion}}</code>{{else}}<span style="{{$s.Muted}}">not running</span>{{end}}
     </td>
     <td style="{{$s.Td}}">
-      {{if $r.RecommendedVersion}}<code style="{{$s.Code}}">{{$r.RecommendedVersion}}</code>{{if and $r.RecommendedAge (ne $r.RecommendedAge "age unknown")}} <small>({{$r.RecommendedAge}})</small>{{else if eq $r.RecommendedAge "age unknown"}} <small>(age unknown)</small>{{end}}{{if $r.MajorVersionJump}} 💥{{end}}{{if $r.IsDowngrade}} ⬇️{{end}}{{else}}—{{end}}
+      {{if $r.RecommendedVersion}}<code style="{{$s.Code}}">{{$r.RecommendedVersion}}</code>{{if and $r.RecommendedAge (ne $r.RecommendedAge "age unknown")}} <small>({{$r.RecommendedAge}})</small>{{else if eq $r.RecommendedAge "age unknown"}} <small>(age unknown)</small>{{end}}{{if $r.MajorVersionJump}} 💥{{end}}{{if $r.IsDowngrade}} ⬇️{{end}}{{else}}—{{end}}{{if $r.RecommendationNote}}<br><small style="{{$s.Muted}}">{{$r.RecommendationNote}}</small>{{end}}
     </td>
   </tr>
   {{end}}

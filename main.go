@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 )
 
 var (
@@ -90,83 +91,16 @@ func main() {
 		}
 
 		if !*skipRemote {
-			registries := registry.DefaultRegistries()
-			getter := overrides.DefaultGetter()
-
+			r := &recommender{
+				registries: registry.DefaultRegistries(),
+				getter:     overrides.DefaultGetter(),
+				overrides:  overrideCfg,
+				safeDays:   *safeDays,
+				verbose:    *verbose,
+				now:        time.Now,
+			}
 			for i := range images {
-				imageName := images[i].Image.Registry + "/" + images[i].Image.Name
-
-				// Override path: trust the upstream source for this image,
-				// but still apply the safeDays cutoff.
-				if override := overrideCfg.Find(imageName); override != nil {
-					if *verbose {
-						fmt.Fprintf(os.Stderr, "    Using override (%s → %s) for %s\n",
-							override.Source, override.Repo, imageName)
-					}
-					rec, err := overrides.Resolve(override, getter, *safeDays)
-					if err != nil {
-						if *verbose {
-							fmt.Fprintf(os.Stderr, "    Override failed for %s, falling back to registry: %v\n", imageName, err)
-						}
-						// Fall through to registry path below.
-					} else if rec == nil {
-						if *verbose {
-							fmt.Fprintf(os.Stderr, "    Override returned no release older than %d days for %s, falling back to registry\n", *safeDays, imageName)
-						}
-						// Fall through to registry path below.
-					} else {
-						// Override gave us an upstream version — find the
-						// matching Docker tag so we recommend something
-						// the user can actually pull.
-						versions, verr := registry.Lookup(registries, images[i].Image)
-						dockerTag := ""
-						if verr == nil {
-							dockerTag = registry.MatchDockerTag(versions, rec.Version)
-						}
-						if dockerTag != "" {
-							images[i].RecommendedVersion = dockerTag
-							images[i].RecommendedAge = rec.Age
-							if *verbose {
-								fmt.Fprintf(os.Stderr, "    Override %s matched Docker tag %s\n", rec.Version, dockerTag)
-							}
-							continue
-						}
-						// No matching Docker tag found — the upstream version
-						// may not be packaged yet. Fall through to the registry
-						// path which picks the best available Docker tag.
-						if *verbose {
-							fmt.Fprintf(os.Stderr, "    Override %s has no matching Docker tag, falling back to registry\n", rec.Version)
-						}
-					}
-				}
-
-				// Registry path.
-				if *verbose {
-					fmt.Fprintf(os.Stderr, "    Fetching versions for %s\n", imageName)
-				}
-
-				versions, err := registry.Lookup(registries, images[i].Image)
-				if err != nil {
-					if *verbose {
-						fmt.Fprintf(os.Stderr, "    Warning: %v\n", err)
-					}
-					continue
-				}
-
-				var tags []string
-				for _, v := range versions {
-					tags = append(tags, v.Tag)
-				}
-				images[i].AvailableVersions = tags
-
-				pick := registry.PickSafeVersion(versions, images[i].Image.Tag, *safeDays)
-				images[i].RecommendedVersion = pick.Version
-				images[i].RecommendedAge = pick.Age
-				images[i].MajorVersionJump = pick.MajorJump
-
-				if images[i].RunningVersion != "" && pick.Version != "" {
-					images[i].IsDowngrade = registry.CompareSemver(pick.Version, images[i].RunningVersion) < 0
-				}
+				r.recommend(&images[i])
 			}
 		}
 

@@ -158,6 +158,10 @@ func writeImageDetails(sb *strings.Builder, results []models.ImageInfo) {
 			sb.WriteString(rec + "\n")
 		}
 
+		if r.RecommendationNote != "" {
+			sb.WriteString(fmt.Sprintf("      Note:      %s\n", r.RecommendationNote))
+		}
+
 		if len(r.AvailableVersions) > 0 {
 			sb.WriteString(fmt.Sprintf("      Available:  %s\n", strings.Join(r.AvailableVersions, ", ")))
 		}

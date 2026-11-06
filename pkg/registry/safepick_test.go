@@ -44,12 +44,11 @@ func TestPickSafeVersion_AllTooNew(t *testing.T) {
 	{Tag: "1.9.0", ReleasedAt: now.Add(-2 * time.Hour)},
     }
 
-    // Everything is too new, falls back to position-based
+    // Dates are known and everything is too new, so nothing qualifies (#23).
     result := PickSafeVersion(versions, "latest", 3)
 
-    // Position fallback skips first, takes second
-    if result.Version != "1.9.0" {
-	t.Errorf("expected 1.9.0 from position fallback, got %s", result.Version)
+    if result.Version != "" {
+	t.Errorf("expected no recommendation, got %s", result.Version)
     }
 }
 
@@ -156,6 +155,7 @@ func TestFormatAge(t *testing.T) {
 	released time.Time
 	want     string
     }{
+	{now.Add(-1 * time.Hour), "1 hour"},
 	{now.Add(-2 * time.Hour), "2 hours"},
 	{now.Add(-24 * time.Hour), "1 day"},
 	{now.Add(-3 * 24 * time.Hour), "3 days"},

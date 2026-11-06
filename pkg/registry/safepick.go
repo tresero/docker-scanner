@@ -13,6 +13,16 @@ type SafePickResult struct {
 	Version   string
 	Age       string
 	MajorJump bool
+	Note      string // why nothing newer is recommended; empty when there's nothing to explain
+}
+
+// PickInput is everything Pick needs. Now is injected so tests can use a
+// fixed clock.
+type PickInput struct {
+	Versions   []models.RegistryVersion
+	CurrentTag string
+	SafeDays   int
+	Now        time.Time
 }
 
 // preReleaseSuffixes are tags that should never be recommended
@@ -29,62 +39,63 @@ func isPreRelease(tag string) bool {
 	return false
 }
 
-// PickSafeVersion selects the best version that has been published
-// for at least safeDays. It also detects major version jumps.
-//
-// Logic:
-//  1. Skip any pre-release versions (rc, beta, alpha, dev)
-//  2. Skip any version released less than safeDays ago
-//  3. The first version that passes both checks is the recommendation
-//  4. If the current tag has a parseable version, check for major version jumps
+// PickSafeVersion is Pick at the current time.
 func PickSafeVersion(versions []models.RegistryVersion, currentTag string, safeDays int) SafePickResult {
-	if len(versions) == 0 {
-		return SafePickResult{}
+	return Pick(PickInput{Versions: versions, CurrentTag: currentTag, SafeDays: safeDays, Now: time.Now()})
+}
+
+// Pick selects the newest stable version published at least SafeDays ago and
+// detects major version jumps.
+//
+// Position fallback runs only when no stable tag has a date. If dates are
+// known and nothing is old enough, it recommends nothing and says why.
+func Pick(in PickInput) SafePickResult {
+	if len(in.Versions) == 0 {
+		return SafePickResult{Note: "no usable version tags found"}
 	}
 
-	now := time.Now()
-	cutoff := now.AddDate(0, 0, -safeDays)
-
-	// First pass: find newest stable version that's old enough (with dates)
-	for _, v := range versions {
-		if isPreRelease(v.Tag) {
-			continue
+	var stable []models.RegistryVersion
+	for _, v := range in.Versions {
+		if !isPreRelease(v.Tag) {
+			stable = append(stable, v)
 		}
+	}
+	if len(stable) == 0 {
+		return SafePickResult{Note: "only pre-release tags found"}
+	}
 
+	cutoff := in.Now.AddDate(0, 0, -in.SafeDays)
+
+	var newestDated *models.RegistryVersion
+	for i, v := range stable {
 		if v.ReleasedAt.IsZero() {
 			continue
 		}
-
+		if newestDated == nil {
+			newestDated = &stable[i]
+		}
 		if v.ReleasedAt.Before(cutoff) {
 			return SafePickResult{
 				Version:   v.Tag,
-				Age:       formatAge(now, v.ReleasedAt),
-				MajorJump: isMajorJump(currentTag, v.Tag),
+				Age:       formatAge(in.Now, v.ReleasedAt),
+				MajorJump: isMajorJump(in.CurrentTag, v.Tag),
 			}
 		}
 	}
 
-	// Fallback: no dates available or everything is too new
-	return positionFallback(versions, currentTag, safeDays)
+	if newestDated == nil {
+		return positionFallback(stable, in.CurrentTag, in.SafeDays, in.Now)
+	}
+
+	return SafePickResult{Note: fmt.Sprintf("newest is %s, pushed %s ago; waiting for -safe-days %d",
+		newestDated.Tag, formatAge(in.Now, newestDated.ReleasedAt), in.SafeDays)}
 }
 
 // positionFallback skips the newest N stable versions when no dates are available
 // For safeDays=3, skip 1 version (the very latest)
 // For safeDays=7, skip 2 versions, etc.
-func positionFallback(versions []models.RegistryVersion, currentTag string, safeDays int) SafePickResult {
+func positionFallback(stable []models.RegistryVersion, currentTag string, safeDays int, now time.Time) SafePickResult {
 	skip := int(math.Max(1, float64(safeDays/3)))
-
-	// Filter to stable versions only
-	var stable []models.RegistryVersion
-	for _, v := range versions {
-		if !isPreRelease(v.Tag) {
-			stable = append(stable, v)
-		}
-	}
-
-	if len(stable) == 0 {
-		return SafePickResult{}
-	}
 
 	if skip >= len(stable) {
 		skip = len(stable) - 1
@@ -93,7 +104,7 @@ func positionFallback(versions []models.RegistryVersion, currentTag string, safe
 	picked := stable[skip]
 	age := "age unknown"
 	if !picked.ReleasedAt.IsZero() {
-		age = formatAge(time.Now(), picked.ReleasedAt)
+		age = formatAge(now, picked.ReleasedAt)
 	}
 
 	return SafePickResult{
@@ -128,6 +139,9 @@ func formatAge(now, released time.Time) string {
 	switch {
 	case days == 0:
 		hours := int(diff.Hours())
+		if hours == 1 {
+			return "1 hour"
+		}
 		return fmt.Sprintf("%d hours", hours)
 	case days == 1:
 		return "1 day"

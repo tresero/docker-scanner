@@ -24,6 +24,7 @@ type ImageInfo struct {
 	MajorVersionJump    bool            `json:"major_version_jump,omitempty"`    // true if recommended is a different major version
 	IsDowngrade         bool            `json:"is_downgrade,omitempty"`          // true if recommended is older than running version
 	SecurityIssues      []SecurityIssue `json:"security_issues,omitempty"`
+	RecommendationNote  string          `json:"recommendation_note,omitempty"`   // Why nothing newer is recommended, e.g., waiting for safe-days
 }
 
 // SecurityIssue represents a security finding

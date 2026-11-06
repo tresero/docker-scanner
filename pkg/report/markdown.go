@@ -104,6 +104,9 @@ func buildImageTable(w *mdWriter, results []models.ImageInfo) {
 				recommended += " :boom:"
 			}
 		}
+		if r.RecommendationNote != "" {
+			recommended += " _" + r.RecommendationNote + "_"
+		}
 
 		running := "not running"
 		if r.RunningVersion == "unknown" {
