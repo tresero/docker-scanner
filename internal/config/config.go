@@ -33,6 +33,7 @@ var UnsafeTagPatterns = []string{
 	"latest",
 	"main",
 	"master",
+	"stable",
 	"dev",
 	"nightly",
 	"edge",

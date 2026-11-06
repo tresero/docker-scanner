@@ -45,13 +45,14 @@ func (r *recommender) recommend(info *models.ImageInfo) {
 			// matching Docker tag so we recommend something
 			// the user can actually pull.
 			versions, verr := registry.Lookup(r.registries, info.Image)
-			dockerTag := ""
+			dockerTag, majorJump := "", false
 			if verr == nil {
-				dockerTag = registry.MatchDockerTag(versions, rec.Version)
+				dockerTag, majorJump = registry.MatchOverride(versions, rec.Version, info.Image.Tag)
 			}
 			if dockerTag != "" {
 				info.RecommendedVersion = dockerTag
 				info.RecommendedAge = rec.Age
+				info.MajorVersionJump = majorJump
 				r.logf("    Override %s matched Docker tag %s\n", rec.Version, dockerTag)
 				return
 			}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"docker-scanner/pkg/models"
+	"docker-scanner/pkg/overrides"
 	"docker-scanner/pkg/registry"
 	"fmt"
 	"testing"
@@ -82,5 +83,55 @@ func TestRecommend_NewerMajorReachesImageInfo(t *testing.T) {
 	}
 	if info.NewerMajorVersion != "13.0.2" {
 		t.Errorf("NewerMajorVersion = %q, want 13.0.2", info.NewerMajorVersion)
+	}
+}
+
+// overrideRecommender serves one GitHub release, published long enough ago to
+// pass safe-days at any real clock, through a fake getter.
+func overrideRecommender(versions []models.RegistryVersion, image string) *recommender {
+	r := newTestRecommender(versions)
+	r.overrides = &overrides.Config{Overrides: []overrides.Override{
+		{Image: image, Source: overrides.SourceGitHubRelease, Repo: "example/app"},
+	}}
+	r.getter = func(string) ([]byte, error) {
+		return []byte(`[{"tag_name":"v2.0.0","published_at":"2020-01-01T00:00:00Z"}]`), nil
+	}
+	return r
+}
+
+func TestRecommend_Override(t *testing.T) {
+	old := testNow.AddDate(0, 0, -10)
+	tests := []struct {
+		name     string
+		pin      string
+		versions []models.RegistryVersion
+		want     string
+		wantJump bool
+	}{
+		{
+			name:     "override keeps the pinned variant and flags the major jump",
+			pin:      "1.0.0-alpine",
+			versions: []models.RegistryVersion{{Tag: "2.0.0", ReleasedAt: old}, {Tag: "2.0.0-alpine", ReleasedAt: old}},
+			want:     "2.0.0-alpine",
+			wantJump: true,
+		},
+		{
+			name:     "override off the pinned line falls back to the registry path",
+			pin:      "1.4",
+			versions: []models.RegistryVersion{{Tag: "2.0.0", ReleasedAt: old}, {Tag: "1.4.9", ReleasedAt: old}},
+			want:     "1.4.9",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			info := models.ImageInfo{Image: models.Image{Registry: "docker.io", Name: "app", Tag: tt.pin}}
+			overrideRecommender(tt.versions, "docker.io/app").recommend(&info)
+			if info.RecommendedVersion != tt.want {
+				t.Errorf("RecommendedVersion = %q, want %q", info.RecommendedVersion, tt.want)
+			}
+			if info.MajorVersionJump != tt.wantJump {
+				t.Errorf("MajorVersionJump = %v, want %v", info.MajorVersionJump, tt.wantJump)
+			}
+		})
 	}
 }

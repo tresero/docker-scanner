@@ -55,8 +55,11 @@ The scanner considers every usable tag from the registry response, and shows the
 
 | Pin | Recommendation |
 | --- | --- |
+| `8-alpine` (major) | Newest safe tag on 8.x. A newer major is reported separately with 💥 |
 | `11.4` (major.minor) | Newest safe tag on the 11.4 line. A newer major is reported separately with 💥 |
 | `11.4.8` (full version) | Newest safe tag. A different major is flagged with 💥 |
+
+The pinned variant is kept: `8-alpine` only gets `-alpine` tags, and `latest` or a plain version only gets plain tags. The one exception is moving between Alpine releases, such as `-alpine3.23` to `-alpine3.24`, and only at a higher version.
 
 ## What gets scanned
 

@@ -4,8 +4,16 @@ import (
 	"docker-scanner/pkg/models"
 	"fmt"
 	"math"
+	"regexp"
+	"sort"
 	"strings"
 	"time"
+)
+
+var (
+	alpineVariant    = regexp.MustCompile(`^alpine(\d+(\.\d+)*)?$`)
+	linuxServerBuild = regexp.MustCompile(`^ls\d+$`)
+	gitHashTag       = regexp.MustCompile(`^[0-9a-f]{7,}$`)
 )
 
 // SafePickResult holds the result of picking a safe version
@@ -49,8 +57,9 @@ func PickSafeVersion(versions []models.RegistryVersion, currentTag string, safeD
 }
 
 // Pick selects the newest stable version published at least SafeDays ago and
-// detects major version jumps. A major.minor pin stays on its own line, and
-// any newer major is reported separately in NewerMajor.
+// detects major version jumps. It keeps the pin's variant. A major or
+// major.minor pin stays on its own line, and any newer major is reported
+// separately in NewerMajor.
 //
 // Position fallback runs only when no stable tag has a date. If dates are
 // known and nothing is old enough, it recommends nothing and says why.
@@ -69,16 +78,24 @@ func Pick(in PickInput) SafePickResult {
 		return SafePickResult{Note: "only pre-release tags found"}
 	}
 
+	matching := filterVariant(stable, in.CurrentTag)
+	if len(matching) == 0 {
+		if variant := tagVariant(in.CurrentTag); variant != "" {
+			return SafePickResult{Note: fmt.Sprintf("no tags found with variant %q", variant)}
+		}
+		return SafePickResult{Note: "no plain version tags found"}
+	}
+
 	major, minor, onLine := pinLine(in.CurrentTag)
 	if !onLine {
-		return selectSafe(stable, in)
+		return selectSafe(matching, in)
 	}
 
 	var line, higherMajor []models.RegistryVersion
-	for _, v := range stable {
-		tagMajor, tagMinor, _ := SemverParts(v.Tag)
+	for _, v := range matching {
+		tagMajor, _, _ := SemverParts(v.Tag)
 		switch {
-		case tagMajor == major && tagMinor == minor:
+		case onPinLine(v.Tag, major, minor):
 			line = append(line, v)
 		case tagMajor > major:
 			higherMajor = append(higherMajor, v)
@@ -88,7 +105,7 @@ func Pick(in PickInput) SafePickResult {
 	newerMajor := selectSafe(higherMajor, in).Version
 	if len(line) == 0 {
 		return SafePickResult{
-			Note:       fmt.Sprintf("no tags found on the %d.%d line", major, minor),
+			Note:       fmt.Sprintf("no tags found on the %s line", lineName(major, minor)),
 			NewerMajor: newerMajor,
 		}
 	}
@@ -131,21 +148,123 @@ func selectSafe(stable []models.RegistryVersion, in PickInput) SafePickResult {
 		newestDated.Tag, formatAge(in.Now, newestDated.ReleasedAt), in.SafeDays)}
 }
 
-// pinLine returns the major and minor of a major.minor pin such as "11.4" or
-// "11.4-ubi". ok is false for any other kind of tag.
+// filterVariant keeps the tags that fit the pin's variant, sorted newest first
+// with the closest variant first among equal versions.
+func filterVariant(stable []models.RegistryVersion, currentTag string) []models.RegistryVersion {
+	var matching []models.RegistryVersion
+	for _, v := range stable {
+		if variantFits(currentTag, v.Tag) {
+			matching = append(matching, v)
+		}
+	}
+
+	pinVariant := tagVariant(currentTag)
+	sort.SliceStable(matching, func(i, j int) bool {
+		a, b := matching[i].Tag, matching[j].Tag
+		if c := compareVersionNumbers(a, b); c != 0 {
+			return c > 0
+		}
+		return variantCloseness(pinVariant, a) > variantCloseness(pinVariant, b)
+	})
+	return matching
+}
+
+// variantFits reports whether a tag has the pin's variant. The one exception
+// to an exact match is an Alpine release at a higher version (alpine3.23 to
+// alpine3.24), which isn't generalised: pg16 to pg17 would break a database.
+func variantFits(currentTag, tag string) bool {
+	pinVariant, variant := tagVariant(currentTag), tagVariant(tag)
+	if pinVariant == variant {
+		return true
+	}
+	if !alpineVariant.MatchString(pinVariant) || !alpineVariant.MatchString(variant) {
+		return false
+	}
+	major, _, _ := SemverParts(currentTag)
+	return major >= 0 && compareVersionNumbers(tag, currentTag) > 0
+}
+
+// variantCloseness ranks a tag's variant against the pin's: an exact match, then
+// an Alpine release when the pin also names one, then anything else.
+func variantCloseness(pinVariant, tag string) int {
+	variant := tagVariant(tag)
+	switch {
+	case variant == pinVariant:
+		return 2
+	case variant != "alpine" && pinVariant != "alpine":
+		return 1
+	}
+	return 0
+}
+
+// tagVariant returns the variant a tag belongs to: alpine for 8.1-alpine,
+// apache for a word-only tag like apache, and "" for plain versions. A floating
+// channel, a date, a git hash and a LinuxServer build number (-ls309) aren't
+// variants.
+func tagVariant(tag string) string {
+	lower := strings.ToLower(tag)
+	if matches := versionRegex.FindStringSubmatch(lower); matches != nil {
+		return versionSuffixVariant(matches[5])
+	}
+	if matches := majorOnlyRegex.FindStringSubmatch(lower); matches != nil {
+		return versionSuffixVariant(matches[2])
+	}
+	if lower == "" || isUnsafeTag(lower) || gitHashTag.MatchString(lower) || lower[0] < 'a' || lower[0] > 'z' {
+		return ""
+	}
+	return lower
+}
+
+func versionSuffixVariant(suffix string) string {
+	if linuxServerBuild.MatchString(suffix) {
+		return ""
+	}
+	return suffix
+}
+
+// pinLine returns the line a major (8-alpine) or major.minor (11.4) pin stays
+// on, with minor -1 for a major pin. ok is false for any other kind of tag.
 func pinLine(tag string) (major, minor int, ok bool) {
 	major, minor, patch := SemverParts(tag)
-	return major, minor, major >= 0 && minor >= 0 && patch < 0
+	return major, minor, major >= 0 && patch < 0
+}
+
+func onPinLine(tag string, major, minor int) bool {
+	tagMajor, tagMinor, _ := SemverParts(tag)
+	return tagMajor == major && (minor < 0 || tagMinor == minor)
+}
+
+func lineName(major, minor int) string {
+	if minor < 0 {
+		return fmt.Sprintf("%d.x", major)
+	}
+	return fmt.Sprintf("%d.%d", major, minor)
+}
+
+// MatchOverride finds the registry tag for an upstream override version,
+// holding it to the same pin rules as Pick. Returns "" if no tag qualifies.
+func MatchOverride(versions []models.RegistryVersion, upstreamVersion, currentTag string) (tag string, majorJump bool) {
+	var fitting []models.RegistryVersion
+	for _, v := range versions {
+		if fitsPin(currentTag, v.Tag) {
+			fitting = append(fitting, v)
+		}
+	}
+
+	tag = MatchDockerTag(fitting, upstreamVersion)
+	if tag == "" {
+		return "", false
+	}
+	return tag, isMajorJump(currentTag, tag)
 }
 
 // fitsPin reports whether a tag can be recommended for the pin.
 func fitsPin(currentTag, tag string) bool {
-	major, minor, onLine := pinLine(currentTag)
-	if !onLine {
-		return true
+	if !variantFits(currentTag, tag) {
+		return false
 	}
-	tagMajor, tagMinor, _ := SemverParts(tag)
-	return tagMajor == major && tagMinor == minor
+	major, minor, onLine := pinLine(currentTag)
+	return !onLine || onPinLine(tag, major, minor)
 }
 
 // positionFallback skips the newest N stable versions when no dates are available

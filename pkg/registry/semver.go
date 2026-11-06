@@ -18,6 +18,16 @@ var semverRegex = regexp.MustCompile(
 	`^v?(\d+)\.(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-([\w]+(?:\.[\w]+)*))?$`,
 )
 
+// versionRegex is semverRegex with any suffix, including multi-part ones like
+// 8.3.2-fpm-alpine. Tags that only fit this one are for pins of that variant.
+var versionRegex = regexp.MustCompile(
+	`^v?(\d+)\.(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-(.+))?$`,
+)
+
+// majorOnlyRegex matches pins like 8, v8 and 16-alpine. The digit limit keeps
+// build IDs and dates such as 2026041305 and 2024-05-01 from reading as majors.
+var majorOnlyRegex = regexp.MustCompile(`^v?(\d{1,3})(?:-([a-zA-Z].*))?$`)
+
 // longNumericSuffix catches tags like 13.1.0-24643103163
 var longNumericSuffix = regexp.MustCompile(`-\d{6,}$`)
 
@@ -38,6 +48,12 @@ var archSuffixes = []string{"-amd64", "-arm64", "-arm64v8", "-arm32v7", "-armhf"
 
 // IsSemver returns true if a tag looks like a real version number
 func IsSemver(tag string) bool {
+	return hasVersionShape(tag) && semverRegex.MatchString(tag)
+}
+
+// hasVersionShape rejects tags that are builds of a version rather than a
+// version: architecture-specific, word-prefixed, or build-ID and git-hash tagged.
+func hasVersionShape(tag string) bool {
 	lower := strings.ToLower(tag)
 
 	// Skip arch-specific prefix tags
@@ -60,10 +76,6 @@ func IsSemver(tag string) bool {
 		return false
 	}
 
-	if !semverRegex.MatchString(tag) {
-		return false
-	}
-
 	// Reject tags with very long numeric suffixes (build IDs)
 	if longNumericSuffix.MatchString(tag) {
 		return false
@@ -75,6 +87,13 @@ func IsSemver(tag string) bool {
 	}
 
 	return true
+}
+
+// isCandidateTag returns true if a tag can be recommended to a pin of its
+// variant. Unlike isCleanVersion it keeps variants such as -ubuntu and
+// -fpm-alpine; Pick only offers them to pins of that variant.
+func isCandidateTag(tag string) bool {
+	return !isUnsafeTag(tag) && hasVersionShape(tag) && versionRegex.MatchString(tag) && !isPreRelease(tag)
 }
 
 // IsCleanTag returns true if the tag has no dev/rc/nightly/distroless suffix
@@ -96,10 +115,14 @@ func isCleanVersion(tag string) bool {
 
 // SemverParts extracts major, minor, patch from a tag.
 // For 4-part versions (e.g., 4.0.17.2952), only uses first 3 parts.
+// Major-only tags such as 8-alpine have just a major.
 // Returns -1 for missing parts.
 func SemverParts(tag string) (int, int, int) {
-	matches := semverRegex.FindStringSubmatch(tag)
+	matches := versionRegex.FindStringSubmatch(tag)
 	if matches == nil {
+		if majorOnly := majorOnlyRegex.FindStringSubmatch(tag); majorOnly != nil {
+			return atoi(majorOnly[1]), -1, -1
+		}
 		return -1, -1, -1
 	}
 
@@ -114,9 +137,9 @@ func SemverParts(tag string) (int, int, int) {
 	return major, minor, patch
 }
 
-// CompareSemver compares two semver tags.
+// compareVersionNumbers compares only the version numbers of two tags.
 // Returns positive if a > b, negative if a < b, 0 if equal.
-func CompareSemver(a, b string) int {
+func compareVersionNumbers(a, b string) int {
 	aMaj, aMin, aPat := SemverParts(a)
 	bMaj, bMin, bPat := SemverParts(b)
 
@@ -133,8 +156,14 @@ func CompareSemver(a, b string) int {
 	if bPat == -1 {
 		bPat = 0
 	}
-	if aPat != bPat {
-		return aPat - bPat
+	return aPat - bPat
+}
+
+// CompareSemver compares two semver tags.
+// Returns positive if a > b, negative if a < b, 0 if equal.
+func CompareSemver(a, b string) int {
+	if c := compareVersionNumbers(a, b); c != 0 {
+		return c
 	}
 
 	// Prefer clean tags over any suffixed ones
@@ -159,15 +188,15 @@ func FilterAndSortTags(tags []string) []models.RegistryVersion {
 	var versions []models.RegistryVersion
 
 	for _, tag := range tags {
-		if isUnsafeTag(tag) || !isCleanVersion(tag) {
+		if !isCandidateTag(tag) {
 			continue
 		}
 		versions = append(versions, models.RegistryVersion{Tag: tag})
 	}
 
-	versions = removePartialTags(versions)
+	versions = removePartialTags(versions, true)
 
-	sort.Slice(versions, func(i, j int) bool {
+	sort.SliceStable(versions, func(i, j int) bool {
 		return CompareSemver(versions[i].Tag, versions[j].Tag) > 0
 	})
 
@@ -180,7 +209,7 @@ func FilterAndSortDockerHubTags(tags []DockerHubTag) []models.RegistryVersion {
 	var versions []models.RegistryVersion
 
 	for _, tag := range tags {
-		if isUnsafeTag(tag.Name) || !isCleanVersion(tag.Name) {
+		if !isCandidateTag(tag.Name) {
 			continue
 		}
 		v := models.RegistryVersion{
@@ -191,9 +220,9 @@ func FilterAndSortDockerHubTags(tags []DockerHubTag) []models.RegistryVersion {
 		versions = append(versions, v)
 	}
 
-	versions = removePartialTags(versions)
+	versions = removePartialTags(versions, true)
 
-	sort.Slice(versions, func(i, j int) bool {
+	sort.SliceStable(versions, func(i, j int) bool {
 		return CompareSemver(versions[i].Tag, versions[j].Tag) > 0
 	})
 
@@ -201,10 +230,18 @@ func FilterAndSortDockerHubTags(tags []DockerHubTag) []models.RegistryVersion {
 }
 
 // DisplayVersions returns the tags to show as available versions: the newest
-// config.VersionFetchLimit of them.
+// config.VersionFetchLimit clean ones. Picking uses a wider list so that it can
+// serve variant pins; this list stays as it always was.
 func DisplayVersions(versions []models.RegistryVersion) []string {
-	var tags []string
+	var clean []models.RegistryVersion
 	for _, v := range versions {
+		if isCleanVersion(v.Tag) {
+			clean = append(clean, v)
+		}
+	}
+
+	var tags []string
+	for _, v := range removePartialTags(clean, false) {
 		if len(tags) == config.VersionFetchLimit {
 			break
 		}
@@ -236,45 +273,56 @@ func parseTimestamp(s string) time.Time {
 //
 // Partial tags are floating — the registry updates them to the latest in
 // the series — so recommending them as pinned versions is misleading.
-func removePartialTags(versions []models.RegistryVersion) []models.RegistryVersion {
-	// Collect major.minor pairs that have a 3-part version
-	has3Part := make(map[[2]int]bool)
+//
+// With matchVariant, a 2-part tag is only removed by a 3-part tag of the same
+// variant, so 9.2-alpine stays when the only 9.2.x tags are plain.
+func removePartialTags(versions []models.RegistryVersion, matchVariant bool) []models.RegistryVersion {
+	type line struct {
+		major, minor int
+		variant      string
+	}
+	lineOf := func(matches []string, tag string) line {
+		l := line{major: atoi(matches[1]), minor: atoi(matches[2])}
+		if matchVariant {
+			l.variant = tagVariant(tag)
+		}
+		return l
+	}
+
+	// Collect lines that have a 3-part version
+	has3Part := make(map[line]bool)
 	// Collect major.minor.patch triples that have a 4-part version
 	has4Part := make(map[[3]int]bool)
 
 	for _, v := range versions {
-		matches := semverRegex.FindStringSubmatch(v.Tag)
+		matches := versionRegex.FindStringSubmatch(v.Tag)
 		if matches == nil {
 			continue
 		}
-		maj, min := atoi(matches[1]), atoi(matches[2])
 		if matches[3] != "" {
-			has3Part[[2]int{maj, min}] = true
-			patch := atoi(matches[3])
+			has3Part[lineOf(matches, v.Tag)] = true
 			if matches[4] != "" {
-				has4Part[[3]int{maj, min, patch}] = true
+				has4Part[[3]int{atoi(matches[1]), atoi(matches[2]), atoi(matches[3])}] = true
 			}
 		}
 	}
 
 	var filtered []models.RegistryVersion
 	for _, v := range versions {
-		matches := semverRegex.FindStringSubmatch(v.Tag)
+		matches := versionRegex.FindStringSubmatch(v.Tag)
 		if matches == nil {
 			filtered = append(filtered, v)
 			continue
 		}
-		maj, min := atoi(matches[1]), atoi(matches[2])
 
-		// 2-part tag: skip if a 3-part tag exists with same major.minor
-		if matches[3] == "" && has3Part[[2]int{maj, min}] {
+		// 2-part tag: skip if a 3-part tag exists on the same line
+		if matches[3] == "" && has3Part[lineOf(matches, v.Tag)] {
 			continue
 		}
 
 		// 3-part tag with no suffix: skip if a 4-part tag exists with same major.minor.patch
 		if matches[3] != "" && matches[4] == "" && matches[5] == "" {
-			patch := atoi(matches[3])
-			if has4Part[[3]int{maj, min, patch}] {
+			if has4Part[[3]int{atoi(matches[1]), atoi(matches[2]), atoi(matches[3])}] {
 				continue
 			}
 		}

@@ -3,6 +3,7 @@ package registry
 import (
 	"docker-scanner/pkg/models"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -94,6 +95,33 @@ func TestExpectedResults(t *testing.T) {
 			tags: caddyWithOlderTags(),
 			pin:  "2.11.5",
 			want: "2.11.7",
+		},
+		{
+			name: "redis keeps the same variant string for the same version",
+			tags: []DockerHubTag{
+				hubTag("8.10.2-alpine3.23", daysAgo(10)),
+				hubTag("8.10.2-alpine", daysAgo(10)),
+				hubTag("8.10.2", daysAgo(10)),
+			},
+			pin:         "8.10.2-alpine3.23",
+			want:        "8.10.2-alpine3.23",
+			neverPicked: []string{"8.10.2-alpine", "8.10.2"},
+		},
+		{
+			name: "valkey 8-alpine stays on 8 and flags 9.2 as a newer major",
+			tags: []DockerHubTag{
+				hubTag("9.2.1-alpine", daysAgo(10)),
+				hubTag("9.2.1", daysAgo(10)),
+				hubTag("9.2-alpine", daysAgo(10)),
+				hubTag("9-alpine", daysAgo(10)),
+				hubTag("8.1.4-alpine", daysAgo(10)),
+				hubTag("8.1.4", daysAgo(10)),
+				hubTag("8-alpine", daysAgo(10)),
+			},
+			pin:         "8-alpine",
+			want:        "8.1.4-alpine",
+			wantMajor:   "9.2.1-alpine",
+			neverPicked: []string{"9.2.1", "8.1.4", "8-alpine"},
 		},
 		{
 			name:        "mariadb 11.4 stays on its line and reports the newer major separately",
@@ -411,6 +439,326 @@ func TestDisplayVersions(t *testing.T) {
 	}
 }
 
+// TestPick_KeepsVariant covers variant preservation, including the variants
+// that are easy to get wrong: build numbers, database versions in the suffix,
+// and multi-part suffixes.
+func TestPick_KeepsVariant(t *testing.T) {
+	old := daysAgo(10)
+	tests := []struct {
+		name      string
+		pin       string
+		tags      []string
+		want      string
+		wantMajor string
+		wantJump  bool
+		wantNote  string
+	}{
+		{
+			name: "a plain pin never gets a build-only variant",
+			pin:  "2.11.7",
+			tags: []string{"2.11.9-builder", "2.11.9-windowsservercore", "2.11.9-nanoserver", "2.11.8"},
+			want: "2.11.8",
+		},
+		{
+			name: "a plain pin never gets another variant at the same version",
+			pin:  "8.6.2",
+			tags: []string{"8.6.3-alpine", "8.6.3"},
+			want: "8.6.3",
+		},
+		{
+			name: "alpine pin keeps alpine",
+			pin:  "2.11.2-alpine",
+			tags: []string{"2.11.3", "2.11.3-alpine", "2.11.3-builder"},
+			want: "2.11.3-alpine",
+		},
+		{
+			name:      "postgres 16-alpine stays on 16-alpine and reports 18 separately",
+			pin:       "16-alpine",
+			tags:      []string{"18.3", "18.3-alpine", "16.4", "16.4-alpine"},
+			want:      "16.4-alpine",
+			wantMajor: "18.3-alpine",
+		},
+		{
+			name:      "a major.minor variant pin stays on its line",
+			pin:       "16.2-alpine",
+			tags:      []string{"18.3.1-alpine", "16.2.1-alpine"},
+			want:      "16.2.1-alpine",
+			wantMajor: "18.3.1-alpine",
+		},
+		{
+			name:     "a full version variant pin can jump major and is flagged",
+			pin:      "16.2.1-alpine",
+			tags:     []string{"18.3.1", "18.3.1-alpine", "16.2.1-alpine"},
+			want:     "18.3.1-alpine",
+			wantJump: true,
+		},
+		{
+			name: "word-only pin keeps its variant",
+			pin:  "apache",
+			tags: []string{"6.9.4", "6.9.4-php8.5", "6.9.4-fpm", "6.9.4-apache"},
+			want: "6.9.4-apache",
+		},
+		{
+			name: "named variant keeps its exact suffix",
+			pin:  "5.1.3-libtorrentv2",
+			tags: []string{"5.1.4-libtorrentv1", "5.1.4-libtorrentv2"},
+			want: "5.1.4-libtorrentv2",
+		},
+		{
+			name: "multi-part variant is kept",
+			pin:  "8.3.1-fpm-alpine",
+			tags: []string{"8.3.2", "8.3.2-fpm", "8.3.2-alpine", "8.3.2-fpm-alpine"},
+			want: "8.3.2-fpm-alpine",
+		},
+		{
+			name: "ubuntu variant pin is kept",
+			pin:  "13.0.1-ubuntu",
+			tags: []string{"13.0.2", "13.0.2-ubuntu"},
+			want: "13.0.2-ubuntu",
+		},
+		{
+			name: "distroless variant pin is kept",
+			pin:  "v3.11.1-distroless",
+			tags: []string{"v3.11.2", "v3.11.2-distroless"},
+			want: "v3.11.2-distroless",
+		},
+		{
+			name: "a database version in the suffix never moves",
+			pin:  "0.8.0-pg16",
+			tags: []string{"0.8.1-pg17", "0.8.0-pg17", "0.8.0-pg16"},
+			want: "0.8.0-pg16",
+		},
+		{
+			name: "alpine release may move at a higher version",
+			pin:  "8.10.2-alpine3.23",
+			tags: []string{"8.12.0-alpine3.24", "8.12.0-alpine", "8.10.2-alpine3.23"},
+			want: "8.12.0-alpine3.24",
+		},
+		{
+			name: "an exact alpine match wins at the same version",
+			pin:  "8.10.2-alpine",
+			tags: []string{"8.12.0-alpine3.24", "8.12.0-alpine"},
+			want: "8.12.0-alpine",
+		},
+		{
+			name: "linuxserver build number is not a variant",
+			pin:  "4.0.17.2952-ls309",
+			tags: []string{"4.0.18.3000-ls310", "4.0.17.2952-ls309"},
+			want: "4.0.18.3000-ls310",
+		},
+		{
+			name: "latest only gets plain tags",
+			pin:  "latest",
+			tags: []string{"2.11.9-builder", "2.11.9-alpine", "2.11.8"},
+			want: "2.11.8",
+		},
+		{
+			name: "stable only gets plain tags",
+			pin:  "stable",
+			tags: []string{"2.11.9-alpine", "2.11.8"},
+			want: "2.11.8",
+		},
+		{
+			name: "a date pin only gets plain tags",
+			pin:  "2024.05.01",
+			tags: []string{"2024.06.01-alpine", "2024.06.01"},
+			want: "2024.06.01",
+		},
+		{
+			name: "a git hash pin only gets plain tags",
+			pin:  "a1b2c3d",
+			tags: []string{"1.2.3-alpine", "1.2.3"},
+			want: "1.2.3",
+		},
+		{
+			name:     "no tag with the pinned variant says so",
+			pin:      "2.11.2-alpine",
+			tags:     []string{"2.11.3", "2.11.3-builder"},
+			wantNote: `no tags found with variant "alpine"`,
+		},
+		{
+			name:     "a plain pin with only variant tags says so",
+			pin:      "latest",
+			tags:     []string{"2.11.3-alpine"},
+			wantNote: "no plain version tags found",
+		},
+		{
+			name:      "major-only pin with nothing on its major says so and reports the newer major",
+			pin:       "8-alpine",
+			tags:      []string{"9.2.1-alpine"},
+			wantMajor: "9.2.1-alpine",
+			wantNote:  "no tags found on the 8.x line",
+		},
+		{
+			name: "a partial variant tag stays when only a plain full version exists",
+			pin:  "9.1-alpine",
+			tags: []string{"9.2.1", "9.1-alpine", "9.1.1"},
+			want: "9.1-alpine",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var hub []DockerHubTag
+			for _, tag := range tt.tags {
+				hub = append(hub, hubTag(tag, old))
+			}
+			got := Pick(PickInput{Versions: FilterAndSortDockerHubTags(hub), CurrentTag: tt.pin, SafeDays: 3, Now: fixedNow})
+			if got.Version != tt.want {
+				t.Errorf("Version = %q, want %q (note %q)", got.Version, tt.want, got.Note)
+			}
+			if got.NewerMajor != tt.wantMajor {
+				t.Errorf("NewerMajor = %q, want %q", got.NewerMajor, tt.wantMajor)
+			}
+			if got.MajorJump != tt.wantJump {
+				t.Errorf("MajorJump = %v, want %v", got.MajorJump, tt.wantJump)
+			}
+			if tt.wantNote == "" && got.Note != "" {
+				t.Errorf("Note = %q, want empty", got.Note)
+			}
+			if !strings.Contains(got.Note, tt.wantNote) {
+				t.Errorf("Note = %q, want it to mention %q", got.Note, tt.wantNote)
+			}
+		})
+	}
+}
+
+func TestTagVariant(t *testing.T) {
+	tests := []struct {
+		tag  string
+		want string
+	}{
+		{"1.2.3", ""},
+		{"v1.2.3", ""},
+		{"16", ""},
+		{"11.4", ""},
+		{"latest", ""},
+		{"main", ""},
+		{"stable", ""},
+		{"a1b2c3d", ""},
+		{"2024.05.01", ""},
+		{"2024-05-01", ""},
+		{"20240501", ""},
+		{"", ""},
+		{"4.0.17.2952-ls309", ""},
+		{"v1.5.6-ls345", ""},
+		{"8-alpine", "alpine"},
+		{"16-alpine3.20", "alpine3.20"},
+		{"8.10.2-alpine3.23", "alpine3.23"},
+		{"8.3-fpm-alpine", "fpm-alpine"},
+		{"apache", "apache"},
+		{"Bookworm", "bookworm"},
+		{"fpm-alpine", "fpm-alpine"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.tag, func(t *testing.T) {
+			if got := tagVariant(tt.tag); got != tt.want {
+				t.Errorf("tagVariant(%q) = %q, want %q", tt.tag, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestIsMajorJump covers major-only tags, which the old parse couldn't read.
+func TestIsMajorJump(t *testing.T) {
+	tests := []struct {
+		name        string
+		current     string
+		recommended string
+		want        bool
+	}{
+		{"valkey major-only variant to 9.2", "8-alpine", "9.2", true},
+		{"postgres major-only variant to 18", "16-alpine", "18.3-alpine", true},
+		{"bare major to a higher major", "8", "9.2.1", true},
+		{"same major from a major-only tag", "8-alpine", "8.1.4-alpine", false},
+		{"full version to a higher major", "2.5.0", "3.0.0", true},
+		{"same major", "2.5.0", "2.6.0", false},
+		{"latest is never a jump", "latest", "3.0.0", false},
+		{"empty current tag is never a jump", "", "3.0.0", false},
+		{"word tag is never a jump", "apache", "6.9.4-apache", false},
+		{"long number is a build id, not a major", "2026041305", "1.2.3", false},
+		{"date is not a major", "2024-05-01", "1.2.3", false},
+		{"unparseable recommendation is never a jump", "8-alpine", "stable", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isMajorJump(tt.current, tt.recommended); got != tt.want {
+				t.Errorf("isMajorJump(%q, %q) = %v, want %v", tt.current, tt.recommended, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestDisplayVersions_ContentsUnchanged protects available_versions: tags
+// newly usable for variant pins must not appear in the list.
+func TestDisplayVersions_ContentsUnchanged(t *testing.T) {
+	tags := []string{
+		"9.2.1", "9.2.1-alpine", "9.2-alpine", "9.2", "9.2.1-fpm-alpine",
+		"9.2.1-ubuntu", "9.2.1-distroless", "9.2.1-busybox",
+	}
+	got := DisplayVersions(FilterAndSortTags(tags))
+	want := []string{"9.2.1", "9.2.1-alpine"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("DisplayVersions = %v, want %v", got, want)
+	}
+}
+
+// TestSemverParts_MajorOnly covers the parse used for pins like 8-alpine.
+func TestSemverParts_MajorOnly(t *testing.T) {
+	tests := []struct {
+		tag                 string
+		major, minor, patch int
+	}{
+		{"8-alpine", 8, -1, -1},
+		{"16", 16, -1, -1},
+		{"v8", 8, -1, -1},
+		{"8.3-fpm-alpine", 8, 3, -1},
+		{"8.10.2-alpine3.23", 8, 10, 2},
+		{"2026041305", -1, -1, -1},
+		{"20240501", -1, -1, -1},
+		{"2024-05-01", -1, -1, -1},
+		{"apache", -1, -1, -1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.tag, func(t *testing.T) {
+			major, minor, patch := SemverParts(tt.tag)
+			if major != tt.major || minor != tt.minor || patch != tt.patch {
+				t.Errorf("SemverParts(%q) = (%d, %d, %d), want (%d, %d, %d)", tt.tag, major, minor, patch, tt.major, tt.minor, tt.patch)
+			}
+		})
+	}
+}
+
+func TestMatchOverride(t *testing.T) {
+	versions := FilterAndSortTags([]string{"13.0.2", "13.0.2-alpine", "11.4.9", "11.4.9-alpine", "2.0.0", "2.0.0-alpine"})
+	tests := []struct {
+		name     string
+		upstream string
+		pin      string
+		want     string
+		wantJump bool
+	}{
+		{"plain pin gets the plain tag", "v2.0.0", "1.0.0", "2.0.0", true},
+		{"variant pin keeps its variant", "v2.0.0", "1.0.0-alpine", "2.0.0-alpine", true},
+		{"same major is not a jump", "v13.0.2", "13.0.1", "13.0.2", false},
+		{"major.minor pin refuses a version off its line", "v13.0.2", "11.4", "", false},
+		{"major.minor pin accepts a version on its line", "v11.4.9", "11.4", "11.4.9", false},
+		{"major-only pin refuses a newer major", "v13.0.2", "11-alpine", "", false},
+		{"no matching tag", "v99.0.0", "1.0.0", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, jump := MatchOverride(versions, tt.upstream, tt.pin)
+			if got != tt.want {
+				t.Errorf("tag = %q, want %q", got, tt.want)
+			}
+			if jump != tt.wantJump {
+				t.Errorf("majorJump = %v, want %v", jump, tt.wantJump)
+			}
+		})
+	}
+}
+
 // TestFillReleaseDates guards the request count: each date costs 3 HTTP
 // requests on GHCR, so keeping the whole list must not fetch a date per tag.
 func TestFillReleaseDates(t *testing.T) {
@@ -438,6 +786,13 @@ func TestFillReleaseDates(t *testing.T) {
 			pin:       "11.4",
 			tags:      []string{"13.0.2", "12.3.2", "11.4.9", "11.4.8"},
 			wantCalls: []string{"11.4.9", "11.4.8"},
+			wantCount: 2,
+		},
+		{
+			name:      "a variant pin only dates tags with its variant",
+			pin:       "8-alpine",
+			tags:      []string{"9.2.1-alpine", "8.1.4", "8.1.4-alpine", "8.1.3-alpine"},
+			wantCalls: []string{"8.1.4-alpine", "8.1.3-alpine"},
 			wantCount: 2,
 		},
 	}
