@@ -159,6 +159,8 @@ func TestManifestAcceptHeader_IncludesAllFormats(t *testing.T) {
 // Link header on every page but the last, and last= starting after a tag.
 type fakeGHCR struct {
 	tags          []string
+	pageSize      int // defaults to GHCR's 1000
+	linkPrefix    string
 	failOnCall    int
 	corruptOnCall int
 	calls         int
@@ -186,11 +188,15 @@ func (f *fakeGHCR) get(rawURL string) ([]byte, http.Header, error) {
 			}
 		}
 	}
-	end := min(start+1000, len(f.tags))
+	pageSize := f.pageSize
+	if pageSize == 0 {
+		pageSize = 1000
+	}
+	end := min(start+pageSize, len(f.tags))
 
 	headers := http.Header{}
 	if end < len(f.tags) {
-		headers.Set("Link", fmt.Sprintf(`</v2/x/tags/list?last=%s&n=1000>; rel="next"`, f.tags[end-1]))
+		headers.Set("Link", fmt.Sprintf(`<%s%s?last=%s&n=%d>; rel="next"`, f.linkPrefix, parsed.Path, f.tags[end-1], pageSize))
 	}
 	body, err := json.Marshal(ghcrTagList{Tags: f.tags[start:end]})
 	return body, headers, err
@@ -225,7 +231,7 @@ func openWebUITags() []string {
 	return tags
 }
 
-func TestFetchAllGHCRTags(t *testing.T) {
+func TestFetchAllTags(t *testing.T) {
 	last := openWebUITags()
 	cases := []struct {
 		name          string
@@ -241,8 +247,8 @@ func TestFetchAllGHCRTags(t *testing.T) {
 		{name: "exactly one full page takes one request", tags: noiseTags("a", 1000), wantCount: 1000, wantCalls: 1},
 		{name: "one tag past a full page reads the second page", tags: noiseTags("a", 1001), wantCount: 1001, wantCalls: 2},
 		{name: "every page of a long list is read", tags: last, wantCount: len(last), wantCalls: 8},
-		{name: "the last allowed page is still read", tags: noiseTags("a", maxGHCRPages*1000), wantCount: maxGHCRPages * 1000, wantCalls: maxGHCRPages},
-		{name: "a list past the page limit is an error", tags: noiseTags("a", maxGHCRPages*1000+1), wantCalls: maxGHCRPages, wantErr: "couldn't read"},
+		{name: "the last allowed page is still read", tags: noiseTags("a", maxTagPages*1000), wantCount: maxTagPages * 1000, wantCalls: maxTagPages},
+		{name: "a list past the page limit is an error", tags: noiseTags("a", maxTagPages*1000+1), wantCalls: maxTagPages, wantErr: "couldn't read"},
 		{name: "a failed first page is an error", tags: last, failOnCall: 1, wantCalls: 1, wantErr: "429"},
 		{name: "a failed middle page is an error, not a partial list", tags: last, failOnCall: 4, wantCalls: 4, wantErr: "429"},
 		{name: "an unreadable middle page is an error, not a partial list", tags: last, corruptOnCall: 4, wantCalls: 4, wantErr: "parse"},
@@ -250,7 +256,7 @@ func TestFetchAllGHCRTags(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			ghcr := &fakeGHCR{tags: tc.tags, failOnCall: tc.failOnCall, corruptOnCall: tc.corruptOnCall}
-			got, err := fetchAllGHCRTags(ghcr.get, "open-webui/open-webui")
+			got, err := fetchAllTags(ghcr.get, tagsListURL("open-webui/open-webui"))
 
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
@@ -300,7 +306,7 @@ func TestGHCRLongTagList(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			ghcr := &fakeGHCR{tags: openWebUITags()}
-			tags, err := fetchAllGHCRTags(ghcr.get, "open-webui/open-webui")
+			tags, err := fetchAllTags(ghcr.get, tagsListURL("open-webui/open-webui"))
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

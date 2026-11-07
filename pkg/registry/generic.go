@@ -2,7 +2,6 @@ package registry
 
 import (
 	"docker-scanner/pkg/models"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -13,10 +12,6 @@ import (
 // as a fallback when no specific handler matches
 type GenericRegistry struct{}
 
-type genericTagList struct {
-	Tags []string `json:"tags"`
-}
-
 func (r *GenericRegistry) Name() string {
 	return "Generic OCI Registry"
 }
@@ -26,30 +21,29 @@ func (r *GenericRegistry) Supports(registry string) bool {
 }
 
 func (r *GenericRegistry) FetchVersions(image models.Image) ([]models.RegistryVersion, error) {
-	return fetchGenericVersions(httpGet, image)
+	return fetchGenericVersions(httpGetFull, image)
 }
 
-func fetchGenericVersions(get func(url string) ([]byte, error), image models.Image) ([]models.RegistryVersion, error) {
+func fetchGenericVersions(get tagPageGetter, image models.Image) ([]models.RegistryVersion, error) {
 	url := fmt.Sprintf("https://%s/v2/%s/tags/list", image.Registry, image.Name)
 
-	body, err := get(url)
+	tags, err := fetchAllTags(get, url)
 	if err != nil {
 		if !servedByDockerHub(err) {
 			return nil, fmt.Errorf("%s: %w", image.Registry, err)
 		}
-		tags, hubErr := fetchHubTags(get, hubRepo(image.Name), image.Tag)
+		hubGet := func(url string) ([]byte, error) {
+			body, _, err := get(url)
+			return body, err
+		}
+		hubTags, hubErr := fetchHubTags(hubGet, hubRepo(image.Name), image.Tag)
 		if hubErr != nil {
 			return nil, fmt.Errorf("%s: %w", image.Registry, hubErr)
 		}
-		return FilterAndSortDockerHubTags(tags), nil
+		return FilterAndSortDockerHubTags(hubTags), nil
 	}
 
-	var tagList genericTagList
-	if err := json.Unmarshal(body, &tagList); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	return FilterAndSortTags(tagList.Tags), nil
+	return FilterAndSortTags(tags), nil
 }
 
 // servedByDockerHub reports whether a registry is a front for Docker Hub: it
