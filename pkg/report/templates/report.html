@@ -58,6 +58,12 @@
     <td style="{{.Styles.TdAlt}}"><span style="{{.Styles.Warn}}">{{.ContainerProblems}} 🚨</span></td>
   </tr>
   {{end}}
+  {{if gt .NewerBuilds 0}}
+  <tr>
+    <td style="{{.Styles.TdAlt}}">Newer builds</td>
+    <td style="{{.Styles.TdAlt}}"><strong>{{.NewerBuilds}} 🔄</strong></td>
+  </tr>
+  {{end}}
   <tr>
     <td style="{{if gt .DowngradeCount 0}}{{.Styles.Td}}{{else}}{{.Styles.TdAlt}}{{end}}">Security issues</td>
     <td style="{{if gt .DowngradeCount 0}}{{.Styles.Td}}{{else}}{{.Styles.TdAlt}}{{end}}">
@@ -111,7 +117,7 @@
       {{with runningLabel $r}}{{if containerProblem $r}}<span style="{{$s.Warn}}">🚨 {{.}}</span>{{else}}<span style="{{$s.Muted}}">{{.}}</span>{{end}}{{end}}
     </td>
     <td style="{{$s.Td}}">
-      {{if $r.RecommendedVersion}}<code style="{{$s.Code}}">{{$r.RecommendedVersion}}</code>{{if and $r.RecommendedAge (ne $r.RecommendedAge "age unknown")}} <small>({{$r.RecommendedAge}})</small>{{else if eq $r.RecommendedAge "age unknown"}} <small>(age unknown)</small>{{end}}{{if $r.MajorVersionJump}} 💥{{end}}{{if $r.IsDowngrade}} ⬇️{{end}}{{else}}—{{end}}{{if $r.NewerMajorVersion}}<br><small>💥 newer major: <code style="{{$s.Code}}">{{$r.NewerMajorVersion}}</code></small>{{end}}{{if $r.RecommendationNote}}<br><small style="{{$s.Muted}}">{{$r.RecommendationNote}}</small>{{end}}
+      {{if $r.RecommendedVersion}}<code style="{{$s.Code}}">{{$r.RecommendedVersion}}</code>{{if and $r.RecommendedAge (ne $r.RecommendedAge "age unknown")}} <small>({{$r.RecommendedAge}})</small>{{else if eq $r.RecommendedAge "age unknown"}} <small>(age unknown)</small>{{end}}{{if $r.MajorVersionJump}} 💥{{end}}{{if $r.IsDowngrade}} ⬇️{{end}}{{else}}—{{end}}{{if $r.NewerMajorVersion}}<br><small>💥 newer major: <code style="{{$s.Code}}">{{$r.NewerMajorVersion}}</code></small>{{end}}{{with newerBuildText $r}}<br><small>🔄 {{.}}</small>{{end}}{{if $r.RecommendationNote}}<br><small style="{{$s.Muted}}">{{$r.RecommendationNote}}</small>{{end}}
     </td>
   </tr>
   {{end}}

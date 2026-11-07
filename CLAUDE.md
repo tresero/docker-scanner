@@ -53,6 +53,7 @@ These rules live in separate places, so a change to what counts as a version may
 - GHCR lists tags roughly in push order, 1000 per page, so `fetchAllTags` reads every page: the newest versions are near the end. A partial list makes old tags look newest, so a failed page is an error and the image shows ❓. Each date costs 3 requests (manifest list → platform manifest → config blob), so `fillReleaseDates` dates at most 10 tags that fit the pin.
 - Docker Hub lookups (`fetchHubTags`) read the first page of `name=.`, plus up to 3 pages of the pin's own filter when that isn't the full list. An older line on a very busy image can still be missing.
 - `GenericRegistry` also uses `fetchAllTags`. It returns no dates, so its results go through `positionFallback`. The exception is a registry that answers 401 with a Docker Hub login challenge, such as `docker.n8n.io`: it's a front for Docker Hub, so it uses `fetchHubTags`.
+- `TagBuilder` is optional. A handler that implements it tells `recommender.checkNewerBuild` what a tag points to, for the 🔄 newer-build check.
 
 ### Overrides
 

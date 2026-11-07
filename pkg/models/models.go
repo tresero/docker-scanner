@@ -34,6 +34,9 @@ type ImageInfo struct {
 	ContainerState      string          `json:"container_state,omitempty"`       // running, unhealthy, restarting, exited, created, paused, dead or "not created"; empty if Docker couldn't be asked
 	ExitCode            *int            `json:"exit_code,omitempty"`             // Set when the container has stopped
 	Health              string          `json:"health,omitempty"`                // Docker health check result, if the image defines one
+	NewerBuildAvailable bool            `json:"newer_build_available,omitempty"` // The compose tag now points to a newer image than the one running
+	NewerBuildDate      string          `json:"newer_build_date,omitempty"`      // When that newer image was pushed, if the registry says
+	RunningBuildDate    string          `json:"running_build_date,omitempty"`    // When the running image was built, if Docker says
 }
 
 // SecurityIssue represents a security finding

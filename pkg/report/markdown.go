@@ -74,6 +74,9 @@ func buildSummary(w *mdWriter, results []models.ImageInfo) {
 	if problems := countContainerProblems(results); problems > 0 {
 		rows = append(rows, []string{"Container problems", fmt.Sprintf("**%d** 🚨", problems)})
 	}
+	if builds := countNewerBuilds(results); builds > 0 {
+		rows = append(rows, []string{"Newer builds", fmt.Sprintf("**%d** 🔄", builds)})
+	}
 	rows = append(rows, []string{"Security issues", securityStatus})
 
 	w.H2("Summary")
@@ -115,6 +118,9 @@ func buildImageTable(w *mdWriter, results []models.ImageInfo) {
 		}
 		if r.NewerMajorVersion != "" {
 			recommended += fmt.Sprintf(" :boom: newer major `%s`", r.NewerMajorVersion)
+		}
+		if build := newerBuildText(r); build != "" {
+			recommended += " 🔄 " + build
 		}
 		if r.RecommendationNote != "" {
 			recommended += " _" + r.RecommendationNote + "_"
