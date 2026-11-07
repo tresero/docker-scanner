@@ -90,6 +90,7 @@ func main() {
 			images[i].RunningVersion = parser.GetRunningVersion(container.Name)
 			if images[i].RunningVersion != "" {
 				images[i].RunningDigests, images[i].RunningLabelVersion = parser.GetRunningImageDetails(container.Name)
+				images[i].RunningBuildDate = parser.GetRunningImageBuildDate(container.Name)
 			}
 		}
 

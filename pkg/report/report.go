@@ -118,6 +118,41 @@ func runningText(r models.ImageInfo, version string) string {
 	return version + " " + label
 }
 
+// newerBuildText describes a newer build of the compose tag, or "" if there isn't one.
+func newerBuildText(r models.ImageInfo) string {
+	if !r.NewerBuildAvailable {
+		return ""
+	}
+	var dates []string
+	if r.NewerBuildDate != "" {
+		dates = append(dates, "pushed "+dateOnly(r.NewerBuildDate))
+	}
+	if r.RunningBuildDate != "" {
+		dates = append(dates, "running image built "+dateOnly(r.RunningBuildDate))
+	}
+	text := "newer build of " + r.Image.Tag
+	if len(dates) > 0 {
+		text += " (" + strings.Join(dates, "; ") + ")"
+	}
+	return text
+}
+
+// dateOnly trims an RFC 3339 time to its date.
+func dateOnly(timestamp string) string {
+	date, _, _ := strings.Cut(timestamp, "T")
+	return date
+}
+
+func countNewerBuilds(results []models.ImageInfo) int {
+	count := 0
+	for _, r := range results {
+		if r.NewerBuildAvailable {
+			count++
+		}
+	}
+	return count
+}
+
 // sameTag treats 2.8.11 and v2.8.11 as the same version.
 func sameTag(a, b string) bool {
 	return strings.TrimPrefix(a, "v") == strings.TrimPrefix(b, "v")
@@ -200,6 +235,9 @@ func writeSummary(sb *strings.Builder, results []models.ImageInfo) {
 	if problems := countContainerProblems(results); problems > 0 {
 		sb.WriteString(fmt.Sprintf("  Container problems:  %d  🚨\n", problems))
 	}
+	if builds := countNewerBuilds(results); builds > 0 {
+		sb.WriteString(fmt.Sprintf("  Newer builds:        %d  🔄\n", builds))
+	}
 	sb.WriteString(fmt.Sprintf("  Security issues:     %d", securityCount))
 	if securityCount > 0 {
 		sb.WriteString("  ⚠️")
@@ -259,6 +297,10 @@ func writeImageDetails(sb *strings.Builder, results []models.ImageInfo) {
 
 		if r.NewerMajorVersion != "" {
 			sb.WriteString(fmt.Sprintf("      💥 Newer major: %s\n", r.NewerMajorVersion))
+		}
+
+		if build := newerBuildText(r); build != "" {
+			sb.WriteString(fmt.Sprintf("      🔄 %s\n", build))
 		}
 
 		if r.RecommendationNote != "" {

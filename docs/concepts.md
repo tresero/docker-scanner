@@ -47,6 +47,14 @@ Containers are found by `container_name`, by the name Compose generates, or by C
 
 In JSON, these are `container_state`, `exit_code` and `health` on each image, plus `container_problem_count` for the 🚨 total. They don't affect the version status or the other counts.
 
+### Newer builds
+
+A tag can be re-pushed with the same name, often to pick up base image security fixes. When a container is running, the scanner compares the running image's digest with what its compose tag points to on the registry. If they differ, the report shows 🔄 with the push date and the running image's build date, when they're known.
+
+It says nothing when it can't be sure: a locally built image has no digest to compare, a container on a different tag than compose says would always differ, and a tag pushed before the running image was built isn't an upgrade.
+
+In JSON, these are `newer_build_available`, `newer_build_date` and `running_build_date` on each image, plus `newer_build_count`. They don't affect the version status or the other counts. Each running image takes one more registry request, or three on GHCR.
+
 ## The 72-hour rule
 
 By default, docker-scanner will not recommend a version that was published less than 3 days ago. The principle: let the early adopters find the landmines first.
@@ -130,6 +138,7 @@ The HTML report includes a legend, but for reference:
 | 🟡 | Upgrade available — a newer safe version exists |
 | 🔴 | Floating tag — uses `latest` or other unpinned tag |
 | ❓ | Not verified — the scan couldn't confirm this image's status, and the note says why |
+| 🔄 | Newer build: the compose tag now points to a newer image than the one running |
 | 🚨 | Container needs attention: unhealthy, restarting, dead, or exited with an error |
 | 💥 | Major version jump in the recommendation |
 | `not running` | Image defined but no container running |

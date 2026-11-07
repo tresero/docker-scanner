@@ -149,11 +149,30 @@ func httpGet(url string) ([]byte, error) {
 
 // httpGetFull is like httpGet but also returns response headers.
 func httpGetFull(url string) ([]byte, http.Header, error) {
+	return httpGetAccept(url, "")
+}
+
+// httpGetManifest requests a manifest in any format a tag might be stored in. The
+// digest in the response is for what was sent, so asking for a narrower format
+// could give a different one.
+func httpGetManifest(url string) ([]byte, http.Header, error) {
+	return httpGetAccept(url, manifestAcceptHeader)
+}
+
+func httpGetAccept(url, accept string) ([]byte, http.Header, error) {
 	client := &http.Client{
 		Timeout: time.Duration(config.HTTPTimeoutSeconds) * time.Second,
 	}
 
-	resp, err := client.Get(url)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	if accept != "" {
+		req.Header.Set("Accept", accept)
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to query registry: %w", err)
 	}

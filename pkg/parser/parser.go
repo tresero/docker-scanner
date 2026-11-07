@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -272,4 +273,22 @@ func GetRunningImageDetails(containerName string) (digests []string, label strin
 		}
 	}
 	return digests, label
+}
+
+// GetRunningImageBuildDate returns when the running image was built, as RFC 3339 in
+// UTC, or "" if Docker can't say.
+func GetRunningImageBuildDate(containerName string) string {
+	out, err := dockerOutput("inspect", "--format", "{{.Image}}", containerName)
+	if err != nil {
+		return ""
+	}
+	out, err = dockerOutput("image", "inspect", "--format", "{{.Created}}", strings.TrimSpace(string(out)))
+	if err != nil {
+		return ""
+	}
+	created, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(string(out)))
+	if err != nil {
+		return ""
+	}
+	return created.UTC().Format(time.RFC3339)
 }

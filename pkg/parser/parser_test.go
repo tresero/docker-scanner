@@ -409,6 +409,32 @@ func TestGetRunningImageDetails(t *testing.T) {
 	}
 }
 
+func TestGetRunningImageBuildDate(t *testing.T) {
+	const (
+		imageID = "{{.Image}}"
+		created = "{{.Created}}"
+	)
+	tests := []struct {
+		name    string
+		answers map[string]string
+		want    string
+	}{
+		{"nothing answers", nil, ""},
+		{"no image inspect", map[string]string{imageID: "sha256:id"}, ""},
+		{"nanoseconds are dropped", map[string]string{imageID: "sha256:id", created: "2026-08-01T10:20:30.123456789Z"}, "2026-08-01T10:20:30Z"},
+		{"a time zone becomes UTC", map[string]string{imageID: "sha256:id", created: "2026-08-01T10:20:30+02:00"}, "2026-08-01T08:20:30Z"},
+		{"an unreadable date is empty", map[string]string{imageID: "sha256:id", created: "yesterday"}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fakeDocker(t, tt.answers)
+			if got := GetRunningImageBuildDate("app"); got != tt.want {
+				t.Errorf("GetRunningImageBuildDate = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestParse_FloatingTagsAreUnsafe pins down the rule: tags that don't look
 // like a recognizable version are flagged as unsafe (UsesLatest=true).
 // Compound tags like "16-alpine" are allowed because they're a common,

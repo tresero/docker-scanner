@@ -35,6 +35,75 @@ func newTestRecommender(versions []models.RegistryVersion) *recommender {
 	}
 }
 
+// buildRegistry also says what a tag points to, and counts how often it's asked.
+type buildRegistry struct {
+	fakeRegistry
+	build    registry.TagBuild
+	buildErr error
+	asked    int
+}
+
+func (b *buildRegistry) CurrentBuild(models.Image) (registry.TagBuild, error) {
+	b.asked++
+	return b.build, b.buildErr
+}
+
+func TestRecommend_NewerBuild(t *testing.T) {
+	pushed := testNow.AddDate(0, 0, -3)
+	const pushedText = "2026-11-03T12:00:00Z"
+	moved := registry.TagBuild{Digest: "sha256:new", Pushed: pushed}
+	tests := []struct {
+		name          string
+		tag           string
+		running       string
+		digests       []string
+		builtDate     string
+		build         registry.TagBuild
+		buildErr      error
+		lookupErr     error
+		wantAvailable bool
+		wantDate      string
+		wantAsked     int
+	}{
+		{name: "the tag has moved past the running image", tag: "11.4", running: "11.4", digests: []string{"sha256:old"}, build: moved, wantAvailable: true, wantDate: pushedText, wantAsked: 1},
+		{name: "the running image is current", tag: "11.4", running: "11.4", digests: []string{"sha256:new"}, build: moved, wantAsked: 1},
+		{name: "a floating tag that moved", tag: "latest", running: "2.3.4", digests: []string{"sha256:old"}, build: moved, wantAvailable: true, wantDate: pushedText, wantAsked: 1},
+		{name: "a running build date after the push isn't newer", tag: "11.4", running: "11.4", digests: []string{"sha256:old"}, builtDate: "2026-11-05T12:00:00Z", build: moved, wantAsked: 1},
+		{name: "an unreadable running build date still compares digests", tag: "11.4", running: "11.4", digests: []string{"sha256:old"}, builtDate: "yesterday", build: moved, wantAvailable: true, wantDate: pushedText, wantAsked: 1},
+		{name: "a registry failure claims nothing", tag: "11.4", running: "11.4", digests: []string{"sha256:old"}, buildErr: errors.New("status 429"), wantAsked: 1},
+		{name: "no date from the registry", tag: "11.4", running: "11.4", digests: []string{"sha256:old"}, build: registry.TagBuild{Digest: "sha256:new"}, wantAvailable: true, wantAsked: 1},
+		{name: "a locally built image isn't checked", tag: "11.4", running: "11.4", build: moved},
+		{name: "a stopped container isn't checked", tag: "11.4", build: moved},
+		{name: "a container on another tag isn't checked", tag: "1.2.4", running: "1.2.3", digests: []string{"sha256:old"}, build: moved},
+		{name: "a failed lookup isn't checked", tag: "11.4", running: "11.4", digests: []string{"sha256:old"}, build: moved, lookupErr: errors.New("status 500")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := &buildRegistry{build: tt.build, buildErr: tt.buildErr}
+			fake.err = tt.lookupErr
+			r := &recommender{registries: []registry.Registry{fake}, safeDays: 3, now: func() time.Time { return testNow }}
+			info := models.ImageInfo{
+				Image:            models.Image{Registry: "docker.io", Name: "mariadb", Tag: tt.tag},
+				RunningVersion:   tt.running,
+				RunningDigests:   tt.digests,
+				RunningBuildDate: tt.builtDate,
+			}
+
+			r.recommend(&info)
+
+			if info.NewerBuildAvailable != tt.wantAvailable {
+				t.Errorf("NewerBuildAvailable = %v, want %v", info.NewerBuildAvailable, tt.wantAvailable)
+			}
+			if info.NewerBuildDate != tt.wantDate {
+				t.Errorf("NewerBuildDate = %q, want %q", info.NewerBuildDate, tt.wantDate)
+			}
+			if fake.asked != tt.wantAsked {
+				t.Errorf("asked the registry %d times, want %d", fake.asked, tt.wantAsked)
+			}
+		})
+	}
+}
+
 // lookupCounter counts registry lookups.
 type lookupCounter struct {
 	fakeRegistry

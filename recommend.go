@@ -44,6 +44,8 @@ func (r *recommender) recommend(info *models.ImageInfo) {
 		return
 	}
 
+	r.checkNewerBuild(info)
+
 	running, runningKnown := registry.ResolveRunning(versions, info.Image.Tag, info.RunningVersion, info.RunningDigests, info.RunningLabelVersion)
 	if runningKnown && running != info.RunningVersion {
 		info.ResolvedRunningVersion = running
@@ -80,6 +82,31 @@ func (r *recommender) recommend(info *models.ImageInfo) {
 	info.RecommendationNote = pick.Note
 	info.NewerMajorVersion = pick.NewerMajor
 	info.Unverified = pick.Unverified
+}
+
+// checkNewerBuild reports whether the compose tag has moved past the running image.
+// A container on a different tag is left out: its digest will differ whether or
+// not the tag was rebuilt. A floating tag's running version is whatever its label
+// says, so that one still counts.
+func (r *recommender) checkNewerBuild(info *models.ImageInfo) {
+	if len(info.RunningDigests) == 0 || (info.RunningVersion != info.Image.Tag && info.Image.Tag != "latest") {
+		return
+	}
+
+	build, err := registry.CurrentBuild(r.registries, info.Image)
+	if err != nil {
+		r.logf("    Couldn't check for a newer build of %s: %v\n", info.Image.Name, err)
+		return
+	}
+
+	// An unreadable date is a zero time, and the digests still decide.
+	runningBuilt, _ := time.Parse(time.RFC3339, info.RunningBuildDate)
+	if registry.NewerBuild(build, info.RunningDigests, runningBuilt) {
+		info.NewerBuildAvailable = true
+		if !build.Pushed.IsZero() {
+			info.NewerBuildDate = build.Pushed.UTC().Format(time.RFC3339)
+		}
+	}
 }
 
 // applyOverride recommends an upstream release if a registry tag matches it. It
