@@ -1173,6 +1173,36 @@ func TestCompareSemver_BuildParts(t *testing.T) {
 	}
 }
 
+// TestPick_Unverified separates "the scan confirmed this" from "the scan couldn't
+// tell", because only the first may show as up to date.
+func TestPick_Unverified(t *testing.T) {
+	tests := []struct {
+		name     string
+		pin      string
+		versions []models.RegistryVersion
+		want     bool
+	}{
+		{"no tags at all", "2.0.0", nil, true},
+		{"only pre-release tags", "2.0.0", []models.RegistryVersion{{Tag: "3.0.0-rc1", ReleasedAt: daysAgo(30)}}, true},
+		{"no tag with the pinned variant", "2.0.0-alpine", []models.RegistryVersion{{Tag: "2.1.0", ReleasedAt: daysAgo(30)}}, true},
+		{"no plain tag for a floating pin", "latest", []models.RegistryVersion{{Tag: "2.1.0-alpine", ReleasedAt: daysAgo(30)}}, true},
+		{"nothing on the pinned line", "11.4", []models.RegistryVersion{{Tag: "13.0.2", ReleasedAt: daysAgo(30)}}, true},
+		{"nothing at or above the pin", "3.0.1", []models.RegistryVersion{{Tag: "2.47.2", ReleasedAt: daysAgo(30)}}, true},
+		{"waiting on safe-days is verified", "2.0.0", []models.RegistryVersion{{Tag: "2.1.0", ReleasedAt: hoursAgo(1)}}, false},
+		{"already on the newest is verified", "2.0.0", []models.RegistryVersion{{Tag: "2.0.0", ReleasedAt: hoursAgo(1)}}, false},
+		{"an upgrade is verified", "2.0.0", []models.RegistryVersion{{Tag: "2.1.0", ReleasedAt: daysAgo(30)}}, false},
+		{"staying on the pin is verified", "2.0.0", []models.RegistryVersion{{Tag: "2.0.0", ReleasedAt: daysAgo(30)}}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Pick(PickInput{Versions: tt.versions, CurrentTag: tt.pin, SafeDays: 3, Now: fixedNow})
+			if got.Unverified != tt.want {
+				t.Errorf("Unverified = %v, want %v (note %q)", got.Unverified, tt.want, got.Note)
+			}
+		})
+	}
+}
+
 // TestFillReleaseDates guards the request count: each date costs 3 HTTP
 // requests on GHCR, so keeping the whole list must not fetch a date per tag.
 func TestFillReleaseDates(t *testing.T) {

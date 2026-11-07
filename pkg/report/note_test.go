@@ -122,3 +122,76 @@ func TestClassifyImage_SpellingIsNotAnUpgrade(t *testing.T) {
 		})
 	}
 }
+
+// TestClassifyImage_UnverifiedIsNotUpToDate comes from a real scan: an image the
+// scanner never managed to check showed a green tick.
+func TestClassifyImage_UnverifiedIsNotUpToDate(t *testing.T) {
+	tests := []struct {
+		name string
+		info models.ImageInfo
+		want ImageStatus
+	}{
+		{"unverified pinned image", models.ImageInfo{Image: models.Image{Tag: "3.0.1"}, Unverified: true}, StatusUnverified},
+		{"floating tag stays floating", models.ImageInfo{Image: models.Image{Tag: "latest"}, UsesLatest: true, Unverified: true}, StatusFloating},
+		{"verified pinned image", models.ImageInfo{Image: models.Image{Tag: "3.0.1"}}, StatusGood},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ClassifyImage(tt.info); got != tt.want {
+				t.Errorf("ClassifyImage = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReports_ShowUnverifiedStatus(t *testing.T) {
+	unverified := models.ImageInfo{
+		Image:              models.Image{Project: "n8n", Service: "n8n", Registry: "docker.n8n.io", Name: "n8nio/n8n", Tag: "3.0.1"},
+		RunningVersion:     "3.0.1",
+		RecommendationNote: "couldn't check for updates",
+		Unverified:         true,
+	}
+	tests := []struct {
+		name     string
+		generate func([]models.ImageInfo) string
+		want     []string
+		notWant  []string
+	}{
+		{"text", Generate, []string{"❓", "Not verified:        1"}, []string{"Up to date:          1"}},
+		{"markdown", GenerateMarkdown, []string{":grey_question:", "| Not verified | **1** :grey_question: |"}, []string{"| Up to date | 1"}},
+		{"html", GenerateHTML, []string{"❓", "Not verified"}, nil},
+		{"json", GenerateJSON, []string{`"unverified": true`}, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := tt.generate([]models.ImageInfo{unverified})
+			for _, want := range tt.want {
+				if !strings.Contains(out, want) {
+					t.Errorf("%s report is missing %q:\n%s", tt.name, want, out)
+				}
+			}
+			for _, bad := range tt.notWant {
+				if strings.Contains(out, bad) {
+					t.Errorf("%s report should not contain %q", tt.name, bad)
+				}
+			}
+		})
+	}
+}
+
+// TestGenerateJSON_UnverifiedLeavesExistingCountsAlone protects the JSON consumer.
+func TestGenerateJSON_UnverifiedLeavesExistingCountsAlone(t *testing.T) {
+	var got struct {
+		LatestCount    int `json:"latest_count"`
+		UpgradeCount   int `json:"upgrade_count"`
+		DowngradeCount int `json:"downgrade_count"`
+		ImageCount     int `json:"image_count"`
+	}
+	out := GenerateJSON([]models.ImageInfo{{Image: models.Image{Tag: "3.0.1"}, Unverified: true}})
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.LatestCount != 0 || got.UpgradeCount != 0 || got.DowngradeCount != 0 || got.ImageCount != 1 {
+		t.Errorf("counts = %+v", got)
+	}
+}

@@ -26,6 +26,9 @@ type SafePickResult struct {
 	// NewerMajor is the newest safe tag on a higher major, set when the pin
 	// keeps the recommendation on its own line and so hides that major.
 	NewerMajor string
+
+	// Unverified means the scan couldn't confirm the image's status.
+	Unverified bool
 }
 
 // PickInput is everything Pick needs. Now is injected so tests can use a
@@ -67,7 +70,7 @@ func PickSafeVersion(versions []models.RegistryVersion, currentTag string, safeD
 // known and nothing is old enough, it recommends nothing and says why.
 func Pick(in PickInput) SafePickResult {
 	if len(in.Versions) == 0 {
-		return SafePickResult{Note: "no usable version tags found"}
+		return SafePickResult{Note: "no usable version tags found", Unverified: true}
 	}
 
 	var stable []models.RegistryVersion
@@ -77,15 +80,15 @@ func Pick(in PickInput) SafePickResult {
 		}
 	}
 	if len(stable) == 0 {
-		return SafePickResult{Note: "only pre-release tags found"}
+		return SafePickResult{Note: "only pre-release tags found", Unverified: true}
 	}
 
 	matching := filterVariant(stable, in.CurrentTag)
 	if len(matching) == 0 {
 		if variant := tagVariant(in.CurrentTag); variant != "" {
-			return SafePickResult{Note: fmt.Sprintf("no tags found with variant %q", variant)}
+			return SafePickResult{Note: fmt.Sprintf("no tags found with variant %q", variant), Unverified: true}
 		}
-		return SafePickResult{Note: "no plain version tags found"}
+		return SafePickResult{Note: "no plain version tags found", Unverified: true}
 	}
 
 	floor := versionFloor(in.CurrentTag, in.RunningVersion)
@@ -111,6 +114,7 @@ func Pick(in PickInput) SafePickResult {
 		return SafePickResult{
 			Note:       fmt.Sprintf("no tags found on the %s line", lineName(major, minor)),
 			NewerMajor: newerMajor,
+			Unverified: true,
 		}
 	}
 
@@ -133,7 +137,7 @@ func selectFromFloor(candidates []models.RegistryVersion, in PickInput, floor st
 		}
 	}
 	if len(eligible) == 0 {
-		return SafePickResult{Note: fmt.Sprintf("no tags at or above %s found; can't confirm it's current", floor)}
+		return SafePickResult{Note: fmt.Sprintf("no tags at or above %s found; can't confirm it's current", floor), Unverified: true}
 	}
 
 	result := selectSafe(eligible, in)

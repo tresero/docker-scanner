@@ -15,6 +15,7 @@ const (
 	StatusUpgrade                      // pinned, newer version available
 	StatusDowngrade                    // recommended is older than running
 	StatusFloating                     // uses latest/main/etc.
+	StatusUnverified                   // the scan couldn't confirm the status
 )
 
 // ClassifyImage returns the status category for color coding.
@@ -25,10 +26,25 @@ func ClassifyImage(r models.ImageInfo) ImageStatus {
 	if r.IsDowngrade {
 		return StatusDowngrade
 	}
+	if r.Unverified {
+		return StatusUnverified
+	}
 	if r.RecommendedVersion != "" && !sameTag(r.RecommendedVersion, r.Image.Tag) {
 		return StatusUpgrade
 	}
 	return StatusGood
+}
+
+// countUnverified returns how many images the scan couldn't confirm. It's
+// separate from countByStatus because the JSON report has no count for it.
+func countUnverified(results []models.ImageInfo) int {
+	count := 0
+	for _, r := range results {
+		if ClassifyImage(r) == StatusUnverified {
+			count++
+		}
+	}
+	return count
 }
 
 // sameTag treats 2.8.11 and v2.8.11 as the same version.
@@ -103,6 +119,9 @@ func writeSummary(sb *strings.Builder, results []models.ImageInfo) {
 		sb.WriteString("  🔴")
 	}
 	sb.WriteString("\n")
+	if unverified := countUnverified(results); unverified > 0 {
+		sb.WriteString(fmt.Sprintf("  Not verified:        %d  ❓\n", unverified))
+	}
 	if downgrades > 0 {
 		sb.WriteString(fmt.Sprintf("  Downgrades:          %d  ⬇️\n", downgrades))
 	}
@@ -128,6 +147,8 @@ func writeImageDetails(sb *strings.Builder, results []models.ImageInfo) {
 			status = "🟡"
 		case StatusDowngrade:
 			status = "⬇️"
+		case StatusUnverified:
+			status = "❓"
 		default:
 			status = "✅"
 		}
