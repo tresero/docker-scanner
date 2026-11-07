@@ -84,6 +84,23 @@ func (r *recommender) recommend(info *models.ImageInfo) {
 	info.Unverified = pick.Unverified
 }
 
+// markDataUpgrade warns when upgrading this database takes more than a new image.
+// It needs the recommendation, so it runs after recommend.
+func markDataUpgrade(info *models.ImageInfo) {
+	running := info.RunningVersion
+	if info.ResolvedRunningVersion != "" {
+		running = info.ResolvedRunningVersion
+	}
+	info.DataUpgradeWarning = registry.DataUpgradeWarning(registry.DataUpgradeInput{
+		Name:        info.Image.Name,
+		Tag:         info.Image.Tag,
+		Running:     running,
+		Recommended: info.RecommendedVersion,
+		NewerMajor:  info.NewerMajorVersion,
+		Floating:    info.UsesLatest,
+	})
+}
+
 // markTagMismatch records whether the next up -d would change the running version.
 // It needs the real running version, so it runs after recommend.
 func markTagMismatch(info *models.ImageInfo) {

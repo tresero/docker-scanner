@@ -39,6 +39,8 @@ Every recommendation must be a real, pullable tag taken from registry data. Upst
 
 A service with `build:` reports its Dockerfile's base image instead (`pkg/parser/dockerfile.go`), with no running version, because the built image's tag says nothing about its base. `SkipLookup` marks rows a registry can't answer, including images `MarkLocalOnly` finds were never pulled.
 
+`registry.DataUpgradeWarning` adds a note on database images. Its wording comes from upgrading each database on a throwaway volume, so retest there before changing it.
+
 ### Tag classification
 
 These rules live in separate places, so a change to what counts as a version may need more than one edit:

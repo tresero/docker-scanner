@@ -101,6 +101,29 @@ A recommendation is never below the higher of your pin and the running version. 
 
 The pinned variant is kept: `8-alpine` only gets `-alpine` tags, and `latest` or a plain version only gets plain tags. The one exception is moving between Alpine releases, such as `-alpine3.23` to `-alpine3.24`, and only at a higher version.
 
+## Before you upgrade
+
+The report says what's available, not whether upgrading is safe for your data. Docker only replaces the program: the data stays in its volume exactly as it was, and adapting it to the new version is up to the app.
+
+- **Back up first**, and read the release notes for every version you're moving past.
+- **💥 only means the first number changed.** It says nothing about data. An app that numbers versions by date, like `pretix`, gets 💥 at each new year and none in between, even though its database can change at any release.
+- **Apps often update their own data on start**, but not always, and that can't usually be undone by going back to the old tag. Check each app's upgrade docs.
+
+### Databases
+
+Databases are the real risk, so the report adds 🗄️ when a higher version is available, or when a tag with no version in it, like `latest`, could move to one by itself. This is what each one did when upgraded on a test volume:
+
+| Database | Tried | Result | What to do |
+|---|---|---|---|
+| `postgres` | 16 to 18 | Won't start on the old data | Back up, then `pg_upgrade` or a dump and restore |
+| `mariadb` | 11.4 to 12 | Starts, but says an upgrade is required and skipped | Back up, then run `mariadb-upgrade` or set `MARIADB_AUTO_UPGRADE=1` |
+| `mysql` | 8.0 to 8.4 | Upgrades its data on first start, and 8.0 then refuses to start | Back up first, because there's no going back |
+| `mongo` | 6 to 8 | Won't start | Back up, then upgrade one major at a time |
+
+`mariadb` and `mysql` change their data on a minor jump too, so they're warned about at 11.4 to 11.8 or 8.0 to 8.4. Images built on these, like `postgis` and `pgvector`, are treated the same. Pinning to a line, like `postgres:16-alpine` or `mariadb:11.4`, keeps a database from moving to a new major by itself.
+
+In JSON, the warning is `data_upgrade_warning`. It doesn't affect the version status or the counts.
+
 ## What gets scanned
 
 ### Compose files
@@ -162,6 +185,7 @@ The HTML report includes a legend, but for reference:
 | ❓ | Not verified — the scan couldn't confirm this image's status, and the note says why |
 | 🔄 | Newer build: the compose tag now points to a newer image than the one running |
 | 🔀 | Compose pins a different version than the container is running |
+| 🗄️ | Database: upgrading it takes more than a new image, and the note says what to do |
 | 🏗️ | Base image of a locally built image: rebuild to upgrade |
 | 🚨 | Container needs attention: unhealthy, restarting, dead, or exited with an error |
 | 💥 | Major version jump in the recommendation |

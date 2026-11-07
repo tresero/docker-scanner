@@ -127,6 +127,7 @@ func main() {
 
 		for i := range images {
 			markTagMismatch(&images[i])
+			markDataUpgrade(&images[i])
 		}
 
 		allResults = append(allResults, images...)
