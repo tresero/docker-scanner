@@ -336,3 +336,60 @@ func GetRunningImageBuildDate(containerName string) string {
 	}
 	return created.UTC().Format(time.RFC3339)
 }
+
+// imageOrigin is what docker image inspect says about where an image came from.
+type imageOrigin struct {
+	RepoDigests []string
+	Identity    *struct {
+		Build []json.RawMessage
+		Pull  []json.RawMessage
+	}
+}
+
+// neverPulled reports whether an image was built or loaded here. Newer Docker
+// records this in Identity. A built image can have a RepoDigest on the containerd
+// image store, so digests only decide when Identity has nothing to say; on older
+// daemons a built image has none.
+func (o imageOrigin) neverPulled() bool {
+	if o.Identity != nil {
+		if len(o.Identity.Pull) > 0 {
+			return false
+		}
+		if len(o.Identity.Build) > 0 {
+			return true
+		}
+	}
+	return len(o.RepoDigests) == 0
+}
+
+// MarkLocalOnly marks an image that Docker holds but never pulled. Asking a
+// registry about its name could only find nothing, or someone else's image: compose
+// names with no registry default to Docker Hub. If Docker doesn't hold it or can't
+// answer, the row is left for the normal lookup.
+func MarkLocalOnly(info *models.ImageInfo) {
+	if info.SkipLookup || info.Dockerfile != "" {
+		return
+	}
+
+	ref := info.Image.Name + ":" + info.Image.Tag
+	if info.Image.Registry != "docker.io" {
+		ref = info.Image.Registry + "/" + ref
+	}
+	out, err := dockerOutput("image", "inspect", "--format", "{{json .}}", ref)
+	if err != nil {
+		return
+	}
+	var origin imageOrigin
+	if err := json.Unmarshal(out, &origin); err != nil || !origin.neverPulled() {
+		return
+	}
+
+	info.LocalOnly = true
+	info.SkipLookup = true
+	info.Unverified = true
+	info.UsesLatest = false
+	info.RecommendationNote = "this image only exists locally, so there's no registry to check"
+	if info.Image.Registry == "docker.io" {
+		info.Image.Registry = "local"
+	}
+}

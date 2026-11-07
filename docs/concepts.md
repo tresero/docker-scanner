@@ -51,7 +51,7 @@ In JSON, these are `container_state`, `exit_code` and `health` on each image, pl
 
 A tag can be re-pushed with the same name, often to pick up base image security fixes. When a container is running, the scanner compares the running image's digest with what its compose tag points to on the registry. If they differ, the report shows 🔄 with the push date and the running image's build date, when they're known.
 
-It says nothing when it can't be sure: a locally built image has no digest to compare, a container on a different tag than compose says would always differ, and a tag pushed before the running image was built isn't an upgrade.
+It says nothing when it can't be sure: a locally built image has nothing on a registry to compare with, a container on a different tag than compose says would always differ, and a tag pushed before the running image was built isn't an upgrade.
 
 In JSON, these are `newer_build_available`, `newer_build_date` and `running_build_date` on each image, plus `newer_build_count`. They don't affect the version status or the other counts. Each running image takes one more registry request, or three on GHCR.
 
@@ -121,6 +121,10 @@ A Dockerfile or Containerfile in a folder with no compose file gets a row too, u
 The row's 🔄 means the base image was pushed after the running image was built. An image built `FROM scratch` has no base to check. If the Dockerfile can't be read, for example with a remote build context, the row shows ❓.
 
 In JSON, these rows have `dockerfile`, and `local_image` if the service has an `image:` name. `image` describes the base image. A standalone Dockerfile has no `service`.
+
+### Local images
+
+An image name with no registry means Docker Hub, but it may only exist on this machine. If Docker holds the image and never pulled it, the row shows ❓ with a note, and no lookup is made, since the same name on Docker Hub could be someone else's image. It isn't flagged as floating, because there's nothing to pin it to. In JSON, `local_only` is true and `image.registry` is `local`.
 
 ### Skipped directories
 

@@ -263,3 +263,25 @@ func TestClassifyImage_RecommendationMatchingTheRealVersion(t *testing.T) {
 		})
 	}
 }
+
+func TestLocalOnly_JSONIsAdditive(t *testing.T) {
+	results := []models.ImageInfo{
+		{Image: models.Image{Registry: "local", Name: "myapp", Tag: "production"}, LocalOnly: true, Unverified: true},
+		{Image: models.Image{Registry: "docker.io", Name: "redis", Tag: "8.10.3"}},
+	}
+	var parsed struct {
+		Images []map[string]any `json:"images"`
+	}
+	if err := json.Unmarshal([]byte(GenerateJSON(results)), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Images[0]["local_only"] != true {
+		t.Errorf("local_only = %v, want true", parsed.Images[0]["local_only"])
+	}
+	if _, ok := parsed.Images[1]["local_only"]; ok {
+		t.Error("local_only is present on a pulled image, want it omitted")
+	}
+	if got := ClassifyImage(results[0]); got != StatusUnverified {
+		t.Errorf("ClassifyImage = %v, want StatusUnverified", got)
+	}
+}
