@@ -55,6 +55,14 @@ It says nothing when it can't be sure: a locally built image has no digest to co
 
 In JSON, these are `newer_build_available`, `newer_build_date` and `running_build_date` on each image, plus `newer_build_count`. They don't affect the version status or the other counts. Each running image takes one more registry request, or three on GHCR.
 
+### Tag mismatches
+
+If compose was edited but the container wasn't recreated, the next `docker compose up -d` will change the running version, possibly during unrelated maintenance. The report shows 🔀 when the compose tag and what the container was created from are both versions and differ, for example `compose 1.2.4, running 1.2.3: next up -d will change this`. It says `downgrade` when the move would be to a lower version.
+
+The real running version is used when it's known, so `16-alpine` that's really 16.15 isn't a mismatch with itself. Floating tags are left to the newer-build check.
+
+In JSON, these are `tag_mismatch` and `tag_mismatch_downgrade` on each image, plus `tag_mismatch_count`.
+
 ## The 72-hour rule
 
 By default, docker-scanner will not recommend a version that was published less than 3 days ago. The principle: let the early adopters find the landmines first.
@@ -139,6 +147,7 @@ The HTML report includes a legend, but for reference:
 | 🔴 | Floating tag — uses `latest` or other unpinned tag |
 | ❓ | Not verified — the scan couldn't confirm this image's status, and the note says why |
 | 🔄 | Newer build: the compose tag now points to a newer image than the one running |
+| 🔀 | Compose pins a different version than the container is running |
 | 🚨 | Container needs attention: unhealthy, restarting, dead, or exited with an error |
 | 💥 | Major version jump in the recommendation |
 | `not running` | Image defined but no container running |

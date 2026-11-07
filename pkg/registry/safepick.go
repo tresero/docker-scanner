@@ -372,6 +372,40 @@ func onPinLine(tag string, major, minor int) bool {
 	return tagMajor == major && (minor < 0 || tagMinor == minor)
 }
 
+// CheckTagMismatch compares a compose tag with what its container was created
+// from, which is what the next "up -d" would change. A tag that isn't a version on
+// either side says nothing: the digest check covers floating tags. The real running
+// version is used when it's known, so 16-alpine that's really 16.15 isn't a mismatch
+// with itself. A line pin holding the running version can't be called a downgrade,
+// since it may move to the same version or a newer one.
+func CheckTagMismatch(composeTag, runningVersion, resolvedRunning string) (mismatch, downgrade bool) {
+	if sameVersionTag(composeTag, runningVersion) {
+		return false, false
+	}
+	running := runningVersion
+	if resolvedRunning != "" {
+		running = resolvedRunning
+	}
+	if sameVersionTag(composeTag, running) {
+		return false, false
+	}
+	if composeMajor, _, _ := SemverParts(composeTag); composeMajor < 0 {
+		return false, false
+	}
+	if runningMajor, _, _ := SemverParts(running); runningMajor < 0 {
+		return false, false
+	}
+
+	if major, minor, isLine := pinLine(composeTag); isLine && onPinLine(running, major, minor) {
+		return true, false
+	}
+	return true, !notBelow(composeTag, running)
+}
+
+func sameVersionTag(a, b string) bool {
+	return strings.TrimPrefix(a, "v") == strings.TrimPrefix(b, "v")
+}
+
 func lineName(major, minor int) string {
 	if minor < 0 {
 		return fmt.Sprintf("%d.x", major)

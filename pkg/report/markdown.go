@@ -77,6 +77,9 @@ func buildSummary(w *mdWriter, results []models.ImageInfo) {
 	if builds := countNewerBuilds(results); builds > 0 {
 		rows = append(rows, []string{"Newer builds", fmt.Sprintf("**%d** 🔄", builds)})
 	}
+	if mismatches := countTagMismatches(results); mismatches > 0 {
+		rows = append(rows, []string{"Tag mismatches", fmt.Sprintf("**%d** 🔀", mismatches)})
+	}
 	rows = append(rows, []string{"Security issues", securityStatus})
 
 	w.H2("Summary")
@@ -121,6 +124,9 @@ func buildImageTable(w *mdWriter, results []models.ImageInfo) {
 		}
 		if build := newerBuildText(r); build != "" {
 			recommended += " 🔄 " + build
+		}
+		if mismatch := tagMismatchText(r); mismatch != "" {
+			recommended += " 🔀 " + mismatch
 		}
 		if r.RecommendationNote != "" {
 			recommended += " _" + r.RecommendationNote + "_"

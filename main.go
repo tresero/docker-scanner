@@ -108,6 +108,10 @@ func main() {
 			}
 		}
 
+		for i := range images {
+			markTagMismatch(&images[i])
+		}
+
 		allResults = append(allResults, images...)
 	}
 

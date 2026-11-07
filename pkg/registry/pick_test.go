@@ -1383,3 +1383,52 @@ func TestFillReleaseDates(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckTagMismatch(t *testing.T) {
+	tests := []struct {
+		name          string
+		tag           string
+		running       string
+		resolved      string
+		wantMismatch  bool
+		wantDowngrade bool
+	}{
+		{name: "the issue example: compose ahead of running", tag: "1.2.4", running: "1.2.3", wantMismatch: true},
+		{name: "the issue's reverse: compose behind running", tag: "1.2.3", running: "1.2.4", wantMismatch: true, wantDowngrade: true},
+		{name: "the same version", tag: "1.2.3", running: "1.2.3"},
+		{name: "the same version spelled with a v", tag: "v1.2.3", running: "1.2.3"},
+		{name: "a different major, compose behind", tag: "11.4.8", running: "12.0.1", wantMismatch: true, wantDowngrade: true},
+
+		{name: "a stopped container has nothing to compare", tag: "1.2.3"},
+		{name: "an unknown running version", tag: "1.2.3", running: "unknown"},
+		{name: "a floating compose tag is left to the digest check", tag: "latest", running: "1.2.3"},
+		{name: "a word compose tag", tag: "apache", running: "7.1.4-apache"},
+		{name: "a word running tag can't be compared", tag: "7.1.4-apache", running: "apache"},
+		{name: "an unresolved compose variable", tag: "${TAG}", running: "1.2.3"},
+
+		{name: "the same tag whose real version is known isn't a mismatch", tag: "16-alpine", running: "16-alpine", resolved: "16.15-alpine"},
+		{name: "compose names the real version of a floating tag", tag: "16.15-alpine", running: "16-alpine", resolved: "16.15-alpine"},
+		{name: "compose is behind the real version", tag: "16.14-alpine", running: "16-alpine", resolved: "16.15-alpine", wantMismatch: true, wantDowngrade: true},
+		{name: "compose is ahead of the real version", tag: "16.16-alpine", running: "16-alpine", resolved: "16.15-alpine", wantMismatch: true},
+		{name: "compose names a version the floating tag might be", tag: "16.15-alpine", running: "16-alpine", wantMismatch: true},
+
+		{name: "a line pin holding the running version isn't a downgrade", tag: "16-alpine", running: "16.15-alpine", wantMismatch: true},
+		{name: "a major.minor line holding the running version isn't a downgrade", tag: "11.4", running: "11.4.13", wantMismatch: true},
+		{name: "a line pin below the running version is a downgrade", tag: "15-alpine", running: "16.15-alpine", wantMismatch: true, wantDowngrade: true},
+
+		{name: "a different variant at the same version", tag: "1.2.3-alpine", running: "1.2.3-bookworm", wantMismatch: true},
+		{name: "a lower LinuxServer build is a downgrade", tag: "4.0.17.2952-ls309", running: "4.0.17.2952-ls320", wantMismatch: true, wantDowngrade: true},
+		{name: "a higher LinuxServer build isn't", tag: "4.0.17.2952-ls320", running: "4.0.17.2952-ls309", wantMismatch: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mismatch, downgrade := CheckTagMismatch(tt.tag, tt.running, tt.resolved)
+			if mismatch != tt.wantMismatch {
+				t.Errorf("mismatch = %v, want %v", mismatch, tt.wantMismatch)
+			}
+			if downgrade != tt.wantDowngrade {
+				t.Errorf("downgrade = %v, want %v", downgrade, tt.wantDowngrade)
+			}
+		})
+	}
+}

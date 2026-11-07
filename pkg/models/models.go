@@ -37,6 +37,8 @@ type ImageInfo struct {
 	NewerBuildAvailable bool            `json:"newer_build_available,omitempty"` // The compose tag now points to a newer image than the one running
 	NewerBuildDate      string          `json:"newer_build_date,omitempty"`      // When that newer image was pushed, if the registry says
 	RunningBuildDate    string          `json:"running_build_date,omitempty"`    // When the running image was built, if Docker says
+	TagMismatch         bool            `json:"tag_mismatch,omitempty"`          // Compose pins a different version than the container was created from
+	TagMismatchDowngrade bool           `json:"tag_mismatch_downgrade,omitempty"` // The next up -d would move to a lower version
 }
 
 // SecurityIssue represents a security finding
