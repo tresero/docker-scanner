@@ -69,6 +69,7 @@ func (r *recommender) recommend(info *models.ImageInfo) {
 	versions, err := registry.Lookup(r.registries, info.Image)
 	if err != nil {
 		r.logf("    Warning: %v\n", err)
+		info.RecommendationNote = fmt.Sprintf("couldn't check for updates: %v", err)
 		return
 	}
 

@@ -133,7 +133,7 @@ func selectFromFloor(candidates []models.RegistryVersion, in PickInput, floor st
 		}
 	}
 	if len(eligible) == 0 {
-		return SafePickResult{Note: fmt.Sprintf("%s is newer than any matching tag", floor)}
+		return SafePickResult{Note: fmt.Sprintf("no tags at or above %s found; can't confirm it's current", floor)}
 	}
 
 	result := selectSafe(eligible, in)
@@ -219,8 +219,9 @@ func selectSafe(stable []models.RegistryVersion, in PickInput) SafePickResult {
 	return SafePickResult{Note: waitingNote(*newestDated, in)}
 }
 
-// filterVariant keeps the tags that fit the pin's variant, sorted newest first
-// with the closest variant first among equal versions.
+// filterVariant keeps the tags that fit the pin's variant, sorted newest first.
+// Among equal versions the closest variant comes first, then the pin's spelling:
+// some images publish both 2.8.11 and v2.8.11, in no reliable order.
 func filterVariant(stable []models.RegistryVersion, currentTag string) []models.RegistryVersion {
 	var matching []models.RegistryVersion
 	for _, v := range stable {
@@ -229,15 +230,22 @@ func filterVariant(stable []models.RegistryVersion, currentTag string) []models.
 		}
 	}
 
-	pinVariant := tagVariant(currentTag)
+	pinVariant, pinV := tagVariant(currentTag), hasVPrefix(currentTag)
 	sort.SliceStable(matching, func(i, j int) bool {
 		a, b := matching[i].Tag, matching[j].Tag
 		if c := compareVersionNumbers(a, b); c != 0 {
 			return c > 0
 		}
-		return variantCloseness(pinVariant, a) > variantCloseness(pinVariant, b)
+		if ca, cb := variantCloseness(pinVariant, a), variantCloseness(pinVariant, b); ca != cb {
+			return ca > cb
+		}
+		return hasVPrefix(a) == pinV && hasVPrefix(b) != pinV
 	})
 	return matching
+}
+
+func hasVPrefix(tag string) bool {
+	return strings.HasPrefix(tag, "v")
 }
 
 // variantFits reports whether a tag has the pin's variant. The one exception
@@ -318,7 +326,7 @@ func MatchOverride(versions []models.RegistryVersion, upstreamVersion, currentTa
 	floor := versionFloor(currentTag, runningVersion)
 
 	var fitting []models.RegistryVersion
-	for _, v := range versions {
+	for _, v := range filterVariant(versions, currentTag) {
 		if fitsPin(currentTag, v.Tag) && notBelow(v.Tag, floor) {
 			fitting = append(fitting, v)
 		}

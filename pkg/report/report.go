@@ -25,10 +25,15 @@ func ClassifyImage(r models.ImageInfo) ImageStatus {
 	if r.IsDowngrade {
 		return StatusDowngrade
 	}
-	if r.RecommendedVersion != "" && r.RecommendedVersion != r.Image.Tag {
+	if r.RecommendedVersion != "" && !sameTag(r.RecommendedVersion, r.Image.Tag) {
 		return StatusUpgrade
 	}
 	return StatusGood
+}
+
+// sameTag treats 2.8.11 and v2.8.11 as the same version.
+func sameTag(a, b string) bool {
+	return strings.TrimPrefix(a, "v") == strings.TrimPrefix(b, "v")
 }
 
 // countByStatus returns counts of each status category.

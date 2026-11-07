@@ -46,7 +46,7 @@ func upstreamCandidates(upstreamVersion string) []string {
 	base = base[:idx]
     }
 
-    candidates := []string{upstreamVersion, clean}
+    candidates := []string{upstreamVersion, clean, "v" + clean}
     if base != clean {
 	candidates = append(candidates, base)
     }

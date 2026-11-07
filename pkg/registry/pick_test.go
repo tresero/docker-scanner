@@ -127,6 +127,19 @@ func TestExpectedResults(t *testing.T) {
 			neverPicked: []string{"9.2.1", "8.1.4", "8-alpine"},
 		},
 		{
+			name: "bentopdf publishes both spellings and the pinned spelling stays up to date",
+			tags: []DockerHubTag{
+				hubTag("v2.8.11", daysAgo(6)),
+				hubTag("2.8.11", daysAgo(6)),
+				hubTag("v2.8.10", daysAgo(30)),
+				hubTag("2.8.10", daysAgo(30)),
+			},
+			pin:         "2.8.11",
+			running:     "2.8.11",
+			want:        "2.8.11",
+			neverPicked: []string{"v2.8.11"},
+		},
+		{
 			name:        "mariadb 11.4 stays on its line and reports the newer major separately",
 			tags:        mariadbTags(),
 			pin:         "11.4",
@@ -462,6 +475,58 @@ func TestDisplayVersions(t *testing.T) {
 			}
 			if tt.want > 0 && got[0] != fmt.Sprintf("1.%d.0", tt.count-1) {
 				t.Errorf("first tag = %q, want the newest", got[0])
+			}
+		})
+	}
+}
+
+// TestPick_KeepsPinnedSpelling covers images that publish a version both with
+// and without a leading v, in either registry order.
+func TestPick_KeepsPinnedSpelling(t *testing.T) {
+	tests := []struct {
+		name string
+		pin  string
+		tags []string
+		want string
+	}{
+		{"plain pin with the v tag listed first", "2.8.11", []string{"v2.8.11", "2.8.11"}, "2.8.11"},
+		{"plain pin with the plain tag listed first", "2.8.11", []string{"2.8.11", "v2.8.11"}, "2.8.11"},
+		{"v pin with the plain tag listed first", "v2.8.11", []string{"2.8.11", "v2.8.11"}, "v2.8.11"},
+		{"v pin with the v tag listed first", "v2.8.11", []string{"v2.8.11", "2.8.11"}, "v2.8.11"},
+		{"plain pin upgrades in its own spelling", "2.8.10", []string{"v2.8.11", "2.8.11", "v2.8.10", "2.8.10"}, "2.8.11"},
+		{"v pin upgrades in its own spelling", "v0.6.0", []string{"0.6.14", "v0.6.14", "0.6.0", "v0.6.0"}, "v0.6.14"},
+		{"variant pin keeps both variant and spelling", "v1.2.0-alpine", []string{"1.2.1-alpine", "v1.2.1-alpine", "v1.2.1"}, "v1.2.1-alpine"},
+		{"only the other spelling exists", "2.8.10", []string{"v2.8.11", "v2.8.10"}, "v2.8.11"},
+		{"floating pin with both spellings still picks one", "latest", []string{"v2.8.11", "2.8.11"}, "2.8.11"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var hub []DockerHubTag
+			for _, tag := range tt.tags {
+				hub = append(hub, hubTag(tag, daysAgo(10)))
+			}
+			got := Pick(PickInput{Versions: FilterAndSortDockerHubTags(hub), CurrentTag: tt.pin, SafeDays: 3, Now: fixedNow})
+			if got.Version != tt.want {
+				t.Errorf("Version = %q, want %q", got.Version, tt.want)
+			}
+		})
+	}
+}
+
+func TestMatchOverride_KeepsPinnedSpelling(t *testing.T) {
+	versions := FilterAndSortTags([]string{"v2.0.0", "2.0.0"})
+	tests := []struct {
+		name string
+		pin  string
+		want string
+	}{
+		{"plain pin", "1.0.0", "2.0.0"},
+		{"v pin", "v1.0.0", "v2.0.0"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got, _ := MatchOverride(versions, "2.0.0", tt.pin, ""); got != tt.want {
+				t.Errorf("tag = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -890,7 +955,7 @@ func TestPick_NeverBelowRunning(t *testing.T) {
 			versions: []models.RegistryVersion{
 				{Tag: "6.9.0", ReleasedAt: daysAgo(30)},
 			},
-			wantNote: "newer than any matching tag",
+			wantNote: "can't confirm",
 		},
 		{
 			name:    "a floating pin with an unreadable running version has no limit",
@@ -917,7 +982,7 @@ func TestPick_NeverBelowRunning(t *testing.T) {
 			versions: []models.RegistryVersion{
 				{Tag: "8.0.0", ReleasedAt: daysAgo(30)},
 			},
-			wantNote: "newer than any matching tag",
+			wantNote: "can't confirm",
 		},
 		{
 			name:    "missing dates never go below running",
@@ -952,7 +1017,7 @@ func TestPick_NeverBelowRunning(t *testing.T) {
 			versions: []models.RegistryVersion{
 				{Tag: "6.1.1.10000-ls290", ReleasedAt: daysAgo(30)},
 			},
-			wantNote: "newer than any matching tag",
+			wantNote: "can't confirm",
 		},
 		{
 			name:    "a higher 4th version part is an upgrade",
@@ -971,7 +1036,7 @@ func TestPick_NeverBelowRunning(t *testing.T) {
 			versions: []models.RegistryVersion{
 				{Tag: "v1.5.6-ls340", ReleasedAt: daysAgo(30)},
 			},
-			wantNote: "newer than any matching tag",
+			wantNote: "can't confirm",
 		},
 		{
 			name:    "a higher linuxserver build is an upgrade",
@@ -1000,7 +1065,7 @@ func TestPick_NeverBelowRunning(t *testing.T) {
 				{Tag: "12.3.2", ReleasedAt: daysAgo(30)},
 				{Tag: "11.4.9", ReleasedAt: daysAgo(30)},
 			},
-			wantNote: "newer than any matching tag",
+			wantNote: "can't confirm",
 		},
 	}
 

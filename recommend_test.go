@@ -5,7 +5,9 @@ import (
 	"docker-scanner/pkg/overrides"
 	"docker-scanner/pkg/registry"
 	"docker-scanner/pkg/report"
+	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -191,6 +193,45 @@ func TestRecommend_NeverBelowRunning(t *testing.T) {
 			}
 			if got := report.ClassifyImage(info); got != tt.wantStatus {
 				t.Errorf("ClassifyImage = %v, want %v", got, tt.wantStatus)
+			}
+		})
+	}
+}
+
+// TestRecommend_FailedLookupSaysSo comes from a real scan: docker.n8n.io returned
+// 401 and the image showed a green tick with no explanation.
+func TestRecommend_FailedLookupSaysSo(t *testing.T) {
+	unauthorized := errors.New("docker.n8n.io: registry returned status 401")
+	tests := []struct {
+		name  string
+		setup func(r *recommender)
+	}{
+		{"registry path", func(*recommender) {}},
+		{"override path falling through to the registry path", func(r *recommender) {
+			r.overrides = &overrides.Config{Overrides: []overrides.Override{
+				{Image: "docker.n8n.io/n8nio/n8n", Source: overrides.SourceGitHubRelease, Repo: "n8n-io/n8n"},
+			}}
+			r.getter = func(string) ([]byte, error) {
+				return []byte(`[{"tag_name":"v3.1.0","published_at":"2020-01-01T00:00:00Z"}]`), nil
+			}
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newTestRecommender(nil)
+			r.registries = []registry.Registry{&fakeRegistry{err: unauthorized}}
+			tt.setup(r)
+
+			info := models.ImageInfo{Image: models.Image{Registry: "docker.n8n.io", Name: "n8nio/n8n", Tag: "3.0.1"}}
+			r.recommend(&info)
+
+			if info.RecommendedVersion != "" {
+				t.Errorf("RecommendedVersion = %q, want empty", info.RecommendedVersion)
+			}
+			for _, want := range []string{"couldn't check", "401"} {
+				if !strings.Contains(info.RecommendationNote, want) {
+					t.Errorf("RecommendationNote = %q, want it to mention %q", info.RecommendationNote, want)
+				}
 			}
 		})
 	}

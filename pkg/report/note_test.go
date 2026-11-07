@@ -92,3 +92,33 @@ func TestReports_ShowNewerMajor(t *testing.T) {
 		})
 	}
 }
+
+// TestClassifyImage_SpellingIsNotAnUpgrade comes from a real scan: bentopdf was
+// flagged as an upgrade from 2.8.11 to v2.8.11, which is the same version.
+func TestClassifyImage_SpellingIsNotAnUpgrade(t *testing.T) {
+	tests := []struct {
+		name        string
+		tag         string
+		recommended string
+		want        ImageStatus
+	}{
+		{"same tag", "2.8.11", "2.8.11", StatusGood},
+		{"v added", "2.8.11", "v2.8.11", StatusGood},
+		{"v removed", "v2.8.11", "2.8.11", StatusGood},
+		{"no recommendation", "2.8.11", "", StatusGood},
+		{"higher version", "2.8.11", "2.8.12", StatusUpgrade},
+		{"higher version with v added", "2.8.11", "v2.8.12", StatusUpgrade},
+		{"variant change is not just spelling", "2.8.11", "v2.8.11-alpine", StatusUpgrade},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ClassifyImage(models.ImageInfo{
+				Image:              models.Image{Tag: tt.tag},
+				RecommendedVersion: tt.recommended,
+			})
+			if got != tt.want {
+				t.Errorf("ClassifyImage = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
