@@ -409,6 +409,98 @@ func TestGetRunningImageBuildDate(t *testing.T) {
 	}
 }
 
+func TestMarkLocalOnly(t *testing.T) {
+	// These answers come from real docker image inspect output. On the containerd
+	// image store a built image has a RepoDigest too, so only Identity tells them
+	// apart. Older daemons have no Identity, but leave built images with no digests.
+	const (
+		builtContainerd = `{"RepoDigests":["myapp@sha256:c8ef"],"Identity":{"Build":[{"Ref":"nu0x","CreatedAt":"2026-11-07T11:45:51-07:00"}]}}`
+		pulledIdentity  = `{"RepoDigests":["redis@sha256:abc"],"Identity":{"Pull":[{"Repository":"docker.io/library/redis"}]}}`
+		pulledAndBuilt  = `{"RepoDigests":["redis@sha256:abc"],"Identity":{"Build":[{"Ref":"x"}],"Pull":[{"Repository":"docker.io/library/redis"}]}}`
+		builtOldDaemon  = `{"RepoDigests":[]}`
+		pulledOldDaemon = `{"RepoDigests":["redis@sha256:abc"]}`
+		noIdentityValue = `{"RepoDigests":["redis@sha256:abc"],"Identity":null}`
+	)
+	local := func(name, tag string) models.ImageInfo {
+		return models.ImageInfo{Image: models.Image{Registry: "docker.io", Name: name, Tag: tag}, UsesLatest: true}
+	}
+	tests := []struct {
+		name          string
+		info          models.ImageInfo
+		answer        string
+		inspectFails  bool
+		wantInspected string
+		wantLocal     bool
+		wantRegistry  string
+	}{
+		{name: "the issue example on the containerd store", info: local("myapp", "production"), answer: builtContainerd, wantInspected: "myapp:production", wantLocal: true, wantRegistry: "local"},
+		{name: "the issue example on an older daemon", info: local("myapp", "production"), answer: builtOldDaemon, wantInspected: "myapp:production", wantLocal: true, wantRegistry: "local"},
+		{name: "a pulled image", info: local("redis", "8.10.3"), answer: pulledIdentity, wantInspected: "redis:8.10.3", wantRegistry: "docker.io"},
+		{name: "a pulled image on an older daemon", info: local("redis", "8.10.3"), answer: pulledOldDaemon, wantInspected: "redis:8.10.3", wantRegistry: "docker.io"},
+		{name: "a pull counts even if it was also built here", info: local("redis", "8.10.3"), answer: pulledAndBuilt, wantInspected: "redis:8.10.3", wantRegistry: "docker.io"},
+		{name: "an empty Identity falls back to digests", info: local("redis", "8.10.3"), answer: noIdentityValue, wantInspected: "redis:8.10.3", wantRegistry: "docker.io"},
+		{name: "an image Docker doesn't hold is still looked up", info: local("redis", "8.10.3"), inspectFails: true, wantInspected: "redis:8.10.3", wantRegistry: "docker.io"},
+		{name: "an unreadable answer is still looked up", info: local("redis", "8.10.3"), answer: "not json", wantInspected: "redis:8.10.3", wantRegistry: "docker.io"},
+		{
+			name:          "a named registry is kept in the reference and the row",
+			info:          models.ImageInfo{Image: models.Image{Registry: "ghcr.io", Name: "org/app", Tag: "1.0"}},
+			answer:        builtContainerd,
+			wantInspected: "ghcr.io/org/app:1.0", wantLocal: true, wantRegistry: "ghcr.io",
+		},
+		{
+			name:         "a row that already skips the lookup isn't asked about",
+			info:         models.ImageInfo{Image: models.Image{Registry: "ghcr.io", Name: "org/app", Tag: "${TAG}"}, SkipLookup: true},
+			answer:       builtContainerd,
+			wantRegistry: "ghcr.io",
+		},
+		{
+			name:         "a Dockerfile's base image isn't asked about",
+			info:         models.ImageInfo{Image: models.Image{Registry: "docker.io", Name: "python", Tag: "3.12"}, Dockerfile: "/srv/Dockerfile"},
+			answer:       builtContainerd,
+			wantRegistry: "docker.io",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			original := dockerOutput
+			t.Cleanup(func() { dockerOutput = original })
+			var inspected string
+			dockerOutput = func(args ...string) ([]byte, error) {
+				inspected = args[len(args)-1]
+				if tt.inspectFails {
+					return nil, errors.New("Error: No such image")
+				}
+				return []byte(tt.answer + "\n"), nil
+			}
+
+			info := tt.info
+			MarkLocalOnly(&info)
+
+			if inspected != tt.wantInspected {
+				t.Errorf("inspected %q, want %q", inspected, tt.wantInspected)
+			}
+			if info.LocalOnly != tt.wantLocal {
+				t.Errorf("LocalOnly = %v, want %v", info.LocalOnly, tt.wantLocal)
+			}
+			if info.Image.Registry != tt.wantRegistry {
+				t.Errorf("Registry = %q, want %q", info.Image.Registry, tt.wantRegistry)
+			}
+			if !tt.wantLocal {
+				return
+			}
+			if !info.SkipLookup || !info.Unverified {
+				t.Errorf("SkipLookup = %v, Unverified = %v, want both true", info.SkipLookup, info.Unverified)
+			}
+			if info.UsesLatest {
+				t.Error("UsesLatest = true, want false: there's nothing to pin to")
+			}
+			if info.RecommendationNote == "" {
+				t.Error("RecommendationNote is empty, want the reason")
+			}
+		})
+	}
+}
+
 // TestParse_FloatingTagsAreUnsafe pins down the rule: tags that don't look
 // like a recognizable version are flagged as unsafe (UsesLatest=true).
 // Compound tags like "16-alpine" are allowed because they're a common,

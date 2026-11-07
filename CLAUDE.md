@@ -37,7 +37,7 @@ Every recommendation must be a real, pullable tag taken from registry data. Upst
 
 `parseFile` expands Compose variables first (`pkg/parser/variables.go`): shell, then the `.env` beside the compose file, then the default. An image with an unresolved variable keeps `${NAME}` in its tag, shows ❓, and skips the lookup.
 
-A service with `build:` reports its Dockerfile's base image instead (`pkg/parser/dockerfile.go`), with no running version, because the built image's tag says nothing about its base. `SkipLookup` marks rows a registry can't answer.
+A service with `build:` reports its Dockerfile's base image instead (`pkg/parser/dockerfile.go`), with no running version, because the built image's tag says nothing about its base. `SkipLookup` marks rows a registry can't answer, including images `MarkLocalOnly` finds were never pulled.
 
 ### Tag classification
 

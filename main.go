@@ -77,6 +77,8 @@ func main() {
 
 		checkers := security.DefaultCheckers()
 		for i := range images {
+			parser.MarkLocalOnly(&images[i])
+
 			image := images[i].Image
 			// A standalone Dockerfile has no compose file to check, and no container.
 			if image.Service == "" {
