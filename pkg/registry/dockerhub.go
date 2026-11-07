@@ -35,17 +35,21 @@ func (r *DockerHubRegistry) Supports(registry string) bool {
 }
 
 func (r *DockerHubRegistry) FetchVersions(image models.Image) ([]models.RegistryVersion, error) {
-	name := image.Name
-	if !strings.Contains(name, "/") {
-		name = "library/" + name
-	}
-
-	tags, err := fetchHubTags(httpGet, name, image.Tag)
+	tags, err := fetchHubTags(httpGet, hubRepo(image.Name), image.Tag)
 	if err != nil {
 		return nil, err
 	}
 
 	return FilterAndSortDockerHubTags(tags), nil
+}
+
+// hubRepo returns an image's Docker Hub repository; official images have no
+// namespace in compose files but live under library/.
+func hubRepo(name string) string {
+	if !strings.Contains(name, "/") {
+		return "library/" + name
+	}
+	return name
 }
 
 // hubPinFilterPages limits how many pages are read for a pin's own name filter.
@@ -125,6 +129,17 @@ func pinNameFilter(tag string) string {
 	return ""
 }
 
+// registryStatusError is a non-200 registry response. Challenge holds the
+// Www-Authenticate header, which says who a 401 expects a token from.
+type registryStatusError struct {
+	Status    int
+	Challenge string
+}
+
+func (e *registryStatusError) Error() string {
+	return fmt.Sprintf("registry returned status %d", e.Status)
+}
+
 // httpGet is a shared HTTP helper
 func httpGet(url string) ([]byte, error) {
 	client := &http.Client{
@@ -138,7 +153,7 @@ func httpGet(url string) ([]byte, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("registry returned status %d", resp.StatusCode)
+		return nil, &registryStatusError{Status: resp.StatusCode, Challenge: resp.Header.Get("Www-Authenticate")}
 	}
 
 	return io.ReadAll(resp.Body)

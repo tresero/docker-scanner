@@ -48,7 +48,7 @@ These rules live in separate places, so a change to what counts as a version may
 - `GHCRRegistry` also claims `lscr.io`, but fetches those images from the Docker Hub mirror for newest-first ordering.
 - GHCR lists tags oldest-first, capped at 1000 per page, so it jumps to the image's current tag to find newer ones. Each date costs 3 requests (manifest list → platform manifest → config blob), so `fillReleaseDates` dates at most 10 tags that fit the pin.
 - Docker Hub lookups (`fetchHubTags`) read the first page of `name=.`, plus up to 3 pages of the pin's own filter when that isn't the full list. An older line on a very busy image can still be missing.
-- `GenericRegistry` returns no dates, so its results always go through `positionFallback`.
+- `GenericRegistry` returns no dates, so its results go through `positionFallback`. The exception is a registry that answers 401 with a Docker Hub login challenge, such as `docker.n8n.io`: it's a front for Docker Hub, so it uses `fetchHubTags`.
 
 ### Overrides
 
