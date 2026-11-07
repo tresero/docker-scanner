@@ -9,7 +9,7 @@ For rare cases where the registry doesn't expose usable version tags, you can co
 Most images don't need overrides. The scanner handles:
 
 - **Docker Hub** — tags with timestamps, newest first
-- **GHCR** — paginated tag listing with smart jump to current version
+- **GHCR** — reads the whole paginated tag list
 - **lscr.io** — routed through Docker Hub for reliable newest-first ordering
 - **Other OCI registries** — generic fallback
 

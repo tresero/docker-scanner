@@ -73,9 +73,8 @@ func tagsListURL(imageName string) string {
 
 func (r *GHCRRegistry) FetchVersions(image models.Image) ([]models.RegistryVersion, error) {
 	// lscr.io images are mirrored on Docker Hub. Docker Hub returns tags
-	// newest-first, which gives us current versions reliably regardless
-	// of total tag count. GHCR returns oldest-first and many lscr.io
-	// images have thousands of tags, making pagination impractical.
+	// newest-first with dates, which gives us current versions in a few
+	// requests regardless of total tag count.
 	if image.Registry == "lscr.io" {
 		return fetchDockerHubMirror(image.Name, image.Tag)
 	}
@@ -86,7 +85,10 @@ func (r *GHCRRegistry) FetchVersions(image models.Image) ([]models.RegistryVersi
 		return nil, fmt.Errorf("failed to get GHCR token: %w", err)
 	}
 
-	allTags, err := fetchAllGHCRTags(image.Name, image.Tag, token)
+	get := func(url string) ([]byte, http.Header, error) {
+		return httpGetWithAuthFull(url, "Bearer "+token, "")
+	}
+	allTags, err := fetchAllGHCRTags(get, image.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -181,72 +183,41 @@ func extractCreatedTimestamp(body []byte) (time.Time, error) {
 }
 
 
-// fetchAllGHCRTags retrieves tags from GHCR using a two-pass strategy.
-// GHCR returns tags in lexicographic order and caps each page at n=1000.
-// Images with many tags (like open-webui with 10k+ tags) would require
-// many pages to reach recent versions.
+// ghcrGetter fetches a page of GHCR's tag list.
+type ghcrGetter func(url string) ([]byte, http.Header, error)
+
+// maxGHCRPages limits how many pages of 1000 tags are read for one image.
+const maxGHCRPages = 100
+
+// fetchAllGHCRTags reads an image's whole tag list. GHCR returns tags roughly in
+// push order, 1000 to a page, so the newest versions are near the end and there's
+// no way to jump to them. Open WebUI has about 42 pages, which takes 10 seconds.
 //
-// Strategy:
-//  1. Fetch the first page (oldest tags)
-//  2. If the page is full (1000 tags) and currentTag is set, do a second
-//     request starting from the current tag to capture newer versions
-//  3. Follow a few pages of pagination from there
-func fetchAllGHCRTags(imageName, currentTag, token string) ([]string, error) {
-	const maxPages = 3
-	auth := "Bearer " + token
+// A partial list makes old tags look like the newest ones, so anything short of
+// the whole list is an error and the image shows as not verified.
+func fetchAllGHCRTags(get ghcrGetter, imageName string) ([]string, error) {
+	var allTags []string
+	url := tagsListURL(imageName)
 
-	// First page: standard request
-	body, headers, err := httpGetWithAuthFull(tagsListURL(imageName), auth, "")
-	if err != nil {
-		return nil, err
-	}
-
-	var tagList ghcrTagList
-	if err := json.Unmarshal(body, &tagList); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	allTags := tagList.Tags
-
-	// If the first page is full, there are more tags. Jump ahead to the
-	// user's current tag to get nearby (newer) versions.
-	if len(tagList.Tags) >= 1000 && currentTag != "" && currentTag != "latest" {
-		jumpURL := fmt.Sprintf("https://ghcr.io/v2/%s/tags/list?n=1000&last=%s", imageName, currentTag)
-		for page := 0; page < maxPages; page++ {
-			body, headers, err = httpGetWithAuthFull(jumpURL, auth, "")
-			if err != nil {
-				break
-			}
-			var page2 ghcrTagList
-			if err := json.Unmarshal(body, &page2); err != nil {
-				break
-			}
-			allTags = append(allTags, page2.Tags...)
-
-			nextURL := parseLinkNext(headers.Get("Link"))
-			if nextURL == "" {
-				break
-			}
-			jumpURL = nextURL
+	for page := 0; page < maxGHCRPages; page++ {
+		body, headers, err := get(url)
+		if err != nil {
+			return nil, err
 		}
-	} else if len(tagList.Tags) >= 1000 {
-		// No current tag to jump from — follow pagination normally
-		url := parseLinkNext(headers.Get("Link"))
-		for page := 0; page < maxPages && url != ""; page++ {
-			body, headers, err = httpGetWithAuthFull(url, auth, "")
-			if err != nil {
-				break
-			}
-			var pageN ghcrTagList
-			if err := json.Unmarshal(body, &pageN); err != nil {
-				break
-			}
-			allTags = append(allTags, pageN.Tags...)
-			url = parseLinkNext(headers.Get("Link"))
+
+		var tagList ghcrTagList
+		if err := json.Unmarshal(body, &tagList); err != nil {
+			return nil, fmt.Errorf("failed to parse response: %w", err)
+		}
+		allTags = append(allTags, tagList.Tags...)
+
+		url = parseLinkNext(headers.Get("Link"))
+		if url == "" {
+			return allTags, nil
 		}
 	}
 
-	return allTags, nil
+	return nil, fmt.Errorf("couldn't read all tags: more than %d", maxGHCRPages*1000)
 }
 
 // parseLinkNext extracts the "next" URL from an OCI Link header.
