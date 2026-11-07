@@ -195,3 +195,71 @@ func TestGenerateJSON_UnverifiedLeavesExistingCountsAlone(t *testing.T) {
 		t.Errorf("counts = %+v", got)
 	}
 }
+
+// TestReports_ShowTheRealRunningVersion shows what's really running, while the
+// JSON keeps running_version as it was and adds the resolved one beside it.
+func TestReports_ShowTheRealRunningVersion(t *testing.T) {
+	info := models.ImageInfo{
+		Image:                  models.Image{Project: "db", Service: "db", Registry: "docker.io", Name: "postgres", Tag: "16-alpine"},
+		RunningVersion:         "16-alpine",
+		ResolvedRunningVersion: "16.15-alpine",
+	}
+	for _, tt := range []struct {
+		name     string
+		generate func([]models.ImageInfo) string
+	}{
+		{"text", Generate},
+		{"markdown", GenerateMarkdown},
+		{"html", GenerateHTML},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if out := tt.generate([]models.ImageInfo{info}); !strings.Contains(out, "16.15-alpine") {
+				t.Errorf("%s report doesn't show the real version", tt.name)
+			}
+		})
+	}
+	t.Run("json", func(t *testing.T) {
+		out := GenerateJSON([]models.ImageInfo{info})
+		for _, want := range []string{`"running_version": "16-alpine"`, `"running_resolved_version": "16.15-alpine"`} {
+			if !strings.Contains(out, want) {
+				t.Errorf("JSON is missing %s", want)
+			}
+		}
+		for _, internal := range []string{"RunningDigests", "RunningLabelVersion"} {
+			if strings.Contains(out, internal) {
+				t.Errorf("JSON leaks %s", internal)
+			}
+		}
+	})
+}
+
+func TestClassifyImage_RecommendationMatchingTheRealVersion(t *testing.T) {
+	tests := []struct {
+		name string
+		info models.ImageInfo
+		want ImageStatus
+	}{
+		{
+			"recommended is what's really running",
+			models.ImageInfo{Image: models.Image{Tag: "11.4"}, ResolvedRunningVersion: "11.4.13", RecommendedVersion: "11.4.13"},
+			StatusGood,
+		},
+		{
+			"recommended is newer than what's really running",
+			models.ImageInfo{Image: models.Image{Tag: "11.4"}, ResolvedRunningVersion: "11.4.12", RecommendedVersion: "11.4.13"},
+			StatusUpgrade,
+		},
+		{
+			"nothing resolved",
+			models.ImageInfo{Image: models.Image{Tag: "11.4"}, RecommendedVersion: "11.4.13"},
+			StatusUpgrade,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ClassifyImage(tt.info); got != tt.want {
+				t.Errorf("ClassifyImage = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

@@ -114,7 +114,7 @@ type htmlData struct {
 
 // GenerateHTML produces an email-friendly HTML report using html/template
 func GenerateHTML(results []models.ImageInfo) string {
-	data := buildHTMLData(results)
+	data := buildHTMLData(withResolvedRunning(results))
 
 	funcMap := template.FuncMap{
 		"odd": func(i int) bool { return i%2 == 1 },

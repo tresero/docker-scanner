@@ -3,6 +3,7 @@ package parser
 import (
 	"docker-scanner/pkg/models"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -346,6 +347,63 @@ func TestGetRunningVersion(t *testing.T) {
 			fakeDocker(t, tt.answers)
 			if got := GetRunningVersion("app"); got != tt.want {
 				t.Errorf("GetRunningVersion() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetRunningImageDetails(t *testing.T) {
+	const (
+		imageID     = "{{.Image}}"
+		repoDigests = "{{json .RepoDigests}}"
+		version     = `{{index .Config.Labels "org.opencontainers.image.version"}}`
+		refName     = `{{index .Config.Labels "org.opencontainers.image.ref.name"}}`
+	)
+	tests := []struct {
+		name        string
+		answers     map[string]string
+		wantDigests []string
+		wantLabel   string
+	}{
+		{"nothing answers", nil, nil, ""},
+		{
+			"one digest and no label",
+			map[string]string{imageID: "sha256:id", repoDigests: `["valkey/valkey@sha256:abc"]`},
+			[]string{"sha256:abc"}, "",
+		},
+		{
+			"several digests",
+			map[string]string{imageID: "sha256:id", repoDigests: `["a/b@sha256:one","docker.n8n.io/a/b@sha256:two"]`},
+			[]string{"sha256:one", "sha256:two"}, "",
+		},
+		{
+			"no digests for a locally built image",
+			map[string]string{imageID: "sha256:id", repoDigests: `[]`},
+			nil, "",
+		},
+		{
+			"an unparseable digest list is ignored",
+			map[string]string{imageID: "sha256:id", repoDigests: `not json`},
+			nil, "",
+		},
+		{
+			"a malformed digest entry is skipped",
+			map[string]string{imageID: "sha256:id", repoDigests: `["no-at-sign","a/b@sha256:ok"]`},
+			[]string{"sha256:ok"}, "",
+		},
+		{"a version label", map[string]string{version: "11.4.9"}, nil, "11.4.9"},
+		{"no value label", map[string]string{version: "<no value>"}, nil, ""},
+		{"a base image's label is ignored", map[string]string{version: "24.04", refName: "ubuntu"}, nil, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fakeDocker(t, tt.answers)
+			digests, label := GetRunningImageDetails("app")
+			if fmt.Sprint(digests) != fmt.Sprint(tt.wantDigests) {
+				t.Errorf("digests = %v, want %v", digests, tt.wantDigests)
+			}
+			if label != tt.wantLabel {
+				t.Errorf("label = %q, want %q", label, tt.wantLabel)
 			}
 		})
 	}

@@ -37,6 +37,7 @@ type PickInput struct {
 	Versions       []models.RegistryVersion
 	CurrentTag     string
 	RunningVersion string // from the Docker daemon; empty when not running
+	RunningUnknown bool   // a container is running but its real version can't be determined
 	SafeDays       int
 	Now            time.Time
 }
@@ -60,7 +61,29 @@ func PickSafeVersion(versions []models.RegistryVersion, currentTag string, safeD
 	return Pick(PickInput{Versions: versions, CurrentTag: currentTag, SafeDays: safeDays, Now: time.Now()})
 }
 
-// Pick selects the newest stable version published at least SafeDays ago and
+// Pick is pickVersion with one more limit: when a container is running but its
+// real version can't be determined, nothing can be shown not to be a downgrade.
+// It only confirms the pin, and names the tag it would otherwise recommend.
+func Pick(in PickInput) SafePickResult {
+	result := pickVersion(in)
+	if !in.RunningUnknown {
+		return result
+	}
+	if result.Version == "" {
+		result.Unverified = true
+		return result
+	}
+	if strings.TrimPrefix(result.Version, "v") == strings.TrimPrefix(in.CurrentTag, "v") {
+		return result
+	}
+	return SafePickResult{
+		Note:       fmt.Sprintf("can't tell which version is running, so can't confirm %s isn't a downgrade", result.Version),
+		NewerMajor: result.NewerMajor,
+		Unverified: true,
+	}
+}
+
+// pickVersion selects the newest stable version published at least SafeDays ago and
 // detects major version jumps. It keeps the pin's variant. A major or
 // major.minor pin stays on its own line, and any newer major is reported
 // separately in NewerMajor. It never recommends a version below the higher of
@@ -68,7 +91,7 @@ func PickSafeVersion(versions []models.RegistryVersion, currentTag string, safeD
 //
 // Position fallback runs only when no stable tag has a date. If dates are
 // known and nothing is old enough, it recommends nothing and says why.
-func Pick(in PickInput) SafePickResult {
+func pickVersion(in PickInput) SafePickResult {
 	if len(in.Versions) == 0 {
 		return SafePickResult{Note: "no usable version tags found", Unverified: true}
 	}
@@ -221,6 +244,38 @@ func selectSafe(stable []models.RegistryVersion, in PickInput) SafePickResult {
 	}
 
 	return SafePickResult{Note: waitingNote(*newestDated, in)}
+}
+
+// ResolveRunning returns the real version behind a running container's tag, and
+// whether it could be determined. Tags like 16-alpine and latest don't say what's
+// running, so it checks the image's version label, then looks for a registry tag
+// with the running image's digest. The digest stops matching once the registry
+// rebuilds a version, so an image pulled long ago may not be placed at all.
+func ResolveRunning(versions []models.RegistryVersion, currentTag, running string, digests []string, label string) (string, bool) {
+	if running == "" {
+		return "", true
+	}
+	if _, _, patch := SemverParts(running); patch >= 0 {
+		return running, true
+	}
+	if _, _, patch := SemverParts(label); patch >= 0 {
+		return label, true
+	}
+
+	runningDigests := make(map[string]bool, len(digests))
+	for _, digest := range digests {
+		if digest != "" {
+			runningDigests[digest] = true
+		}
+	}
+	for _, candidates := range [][]models.RegistryVersion{filterVariant(versions, currentTag), versions} {
+		for _, v := range candidates {
+			if runningDigests[v.Digest] {
+				return v.Tag, true
+			}
+		}
+	}
+	return running, false
 }
 
 // filterVariant keeps the tags that fit the pin's variant, sorted newest first.

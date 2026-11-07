@@ -24,6 +24,9 @@ type ImageInfo struct {
 	MajorVersionJump    bool            `json:"major_version_jump,omitempty"`    // true if recommended is a different major version
 	IsDowngrade         bool            `json:"is_downgrade,omitempty"`          // Kept for compatibility: recommendations are no longer below the running version
 	SecurityIssues      []SecurityIssue `json:"security_issues,omitempty"`
+	RunningDigests         []string `json:"-"`                                 // Digests of the running image, from the Docker daemon
+	RunningLabelVersion    string   `json:"-"`                                 // The running image's version label, if it has one
+	ResolvedRunningVersion string   `json:"running_resolved_version,omitempty"` // The real version behind a running tag like 16-alpine
 	RecommendationNote  string          `json:"recommendation_note,omitempty"`   // Why nothing newer is recommended, e.g., waiting for safe-days
 	Unverified          bool            `json:"unverified,omitempty"`            // The scan couldn't confirm this image's status; recommendation_note says why
 	NewerMajorVersion   string          `json:"newer_major_version,omitempty"`   // Newest safe tag on a higher major, when the pin's line is kept
@@ -50,4 +53,5 @@ type RegistryVersion struct {
 	Tag      string
 	Released string    // raw timestamp string from registry
 	ReleasedAt time.Time // parsed timestamp
+	Digest   string    // image digest, when the registry provides it
 }

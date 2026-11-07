@@ -9,6 +9,7 @@ import (
 
 // GenerateMarkdown produces a markdown-formatted report
 func GenerateMarkdown(results []models.ImageInfo) string {
+	results = withResolvedRunning(results)
 	w := newMdWriter()
 
 	buildHeader(w)

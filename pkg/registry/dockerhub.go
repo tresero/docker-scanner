@@ -19,6 +19,7 @@ type DockerHubRegistry struct{}
 type DockerHubTag struct {
 	Name        string `json:"name"`
 	LastUpdated string `json:"last_updated"`
+	Digest      string `json:"digest"`
 }
 
 type dockerHubResponse struct {

@@ -29,10 +29,26 @@ func ClassifyImage(r models.ImageInfo) ImageStatus {
 	if r.Unverified {
 		return StatusUnverified
 	}
+	if r.ResolvedRunningVersion != "" && sameTag(r.RecommendedVersion, r.ResolvedRunningVersion) {
+		return StatusGood
+	}
 	if r.RecommendedVersion != "" && !sameTag(r.RecommendedVersion, r.Image.Tag) {
 		return StatusUpgrade
 	}
 	return StatusGood
+}
+
+// withResolvedRunning returns results with the real running version in place of
+// a tag like 16-alpine, for reports people read. JSON keeps both fields.
+func withResolvedRunning(results []models.ImageInfo) []models.ImageInfo {
+	shown := make([]models.ImageInfo, len(results))
+	copy(shown, results)
+	for i := range shown {
+		if shown[i].ResolvedRunningVersion != "" {
+			shown[i].RunningVersion = shown[i].ResolvedRunningVersion
+		}
+	}
+	return shown
 }
 
 // countUnverified returns how many images the scan couldn't confirm. It's
@@ -71,6 +87,7 @@ func countByStatus(results []models.ImageInfo) (floating, upgrades, downgrades, 
 
 // Generate produces a human-readable report from scan results
 func Generate(results []models.ImageInfo) string {
+	results = withResolvedRunning(results)
 	var sb strings.Builder
 
 	writeHeader(&sb)

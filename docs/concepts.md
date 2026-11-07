@@ -61,6 +61,8 @@ The scanner considers every usable tag it reads, and shows the newest 10 as avai
 | `11.4` (major.minor) | Newest safe tag on the 11.4 line. A newer major is reported separately with 💥 |
 | `11.4.8` (full version) | Newest safe tag. A different major is flagged with 💥 |
 
+A tag like `16-alpine` or `latest` doesn't say what's actually running, so the scanner checks the image's version label, then looks for a registry tag with the same digest as the running image. If neither identifies it, for example because the registry has rebuilt that version since you pulled, the image shows as not verified and the note names the tag it would otherwise recommend.
+
 A recommendation is never below the higher of your pin and the running version. If you're already on the newest version it's reported as up to date, whatever the tag's age.
 
 The pinned variant is kept: `8-alpine` only gets `-alpine` tags, and `latest` or a plain version only gets plain tags. The one exception is moving between Alpine releases, such as `-alpine3.23` to `-alpine3.24`, and only at a higher version.
