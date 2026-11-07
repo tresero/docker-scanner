@@ -68,6 +68,7 @@ func (r *recommender) recommend(info *models.ImageInfo) {
 		CurrentTag:     info.Image.Tag,
 		RunningVersion: running,
 		RunningUnknown: !runningKnown,
+		StayOnMajor:    registry.IsDatabase(info.Image.Name),
 		SafeDays:       r.safeDays,
 		Now:            r.now(),
 	}

@@ -162,6 +162,41 @@ func TestRecommend_SkipLookup(t *testing.T) {
 	}
 }
 
+// TestRecommend_DatabaseStaysOnMajor runs the real case end to end: mysql 8.0 can't
+// start as 26.10, so 26.10 can only be mentioned, not recommended.
+func TestRecommend_DatabaseStaysOnMajor(t *testing.T) {
+	versions := []models.RegistryVersion{
+		{Tag: "26.10.0", ReleasedAt: testNow.AddDate(0, 0, -10)},
+		{Tag: "8.4.13", ReleasedAt: testNow.AddDate(0, 0, -10)},
+		{Tag: "8.0.30", ReleasedAt: testNow.AddDate(-2, 0, 0)},
+	}
+	tests := []struct {
+		name      string
+		image     string
+		want      string
+		wantNewer string
+		wantJump  bool
+	}{
+		{name: "a database stays on its major", image: "mysql", want: "8.4.13", wantNewer: "26.10.0"},
+		{name: "an app can still jump", image: "someapp", want: "26.10.0", wantJump: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			info := models.ImageInfo{Image: models.Image{Registry: "docker.io", Name: tt.image, Tag: "8.0.30"}}
+			newTestRecommender(versions).recommend(&info)
+			if info.RecommendedVersion != tt.want {
+				t.Errorf("RecommendedVersion = %q, want %q", info.RecommendedVersion, tt.want)
+			}
+			if info.NewerMajorVersion != tt.wantNewer {
+				t.Errorf("NewerMajorVersion = %q, want %q", info.NewerMajorVersion, tt.wantNewer)
+			}
+			if info.MajorVersionJump != tt.wantJump {
+				t.Errorf("MajorVersionJump = %v, want %v", info.MajorVersionJump, tt.wantJump)
+			}
+		})
+	}
+}
+
 func TestMarkDataUpgrade(t *testing.T) {
 	tests := []struct {
 		name string

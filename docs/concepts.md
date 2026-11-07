@@ -93,7 +93,7 @@ The scanner considers every usable tag it reads, and shows the newest 10 as avai
 | --- | --- |
 | `8-alpine` (major) | Newest safe tag on 8.x. A newer major is reported separately with 💥 |
 | `11.4` (major.minor) | Newest safe tag on the 11.4 line. A newer major is reported separately with 💥 |
-| `11.4.8` (full version) | Newest safe tag. A different major is flagged with 💥 |
+| `11.4.8` (full version) | Newest safe tag. A different major is flagged with 💥 |. A database stays on its major instead |
 
 A tag like `16-alpine` or `latest` doesn't say what's actually running, so the scanner checks the image's version label, then looks for a registry tag with the same digest as the running image. If neither identifies it, for example because the registry has rebuilt that version since you pulled, the image shows as not verified and the note names the tag it would otherwise recommend.
 
@@ -117,10 +117,13 @@ Databases are the real risk, so the report adds 🗄️ when a higher version is
 |---|---|---|---|
 | `postgres` | 16 to 18 | Won't start on the old data | Back up, then `pg_upgrade` or a dump and restore |
 | `mariadb` | 11.4 to 12 | Starts, but says an upgrade is required and skipped | Back up, then run `mariadb-upgrade` or set `MARIADB_AUTO_UPGRADE=1` |
-| `mysql` | 8.0 to 8.4 | Upgrades its data on first start, and 8.0 then refuses to start | Back up first, because there's no going back |
+| `mysql` | 8.0 to 8.4, 8.4 to 9.7 | Upgrades its data on first start, and 8.0 then refuses to start | Back up first, because there's no going back |
+| `mysql` | 8.0 to 9.7, 8.0 to 26.10 | Won't start | Move through each long-term release in turn |
 | `mongo` | 6 to 8 | Won't start | Back up, then upgrade one major at a time |
 
 `mariadb` and `mysql` change their data on a minor jump too, so they're warned about at 11.4 to 11.8 or 8.0 to 8.4. Images built on these, like `postgis` and `pgvector`, are treated the same. Pinning to a line, like `postgres:16-alpine` or `mariadb:11.4`, keeps a database from moving to a new major by itself.
+
+A database is also never recommended a new major, because that tag might not start on the data. A pin like `mysql:8.0.30` stays on 8.x, as does `latest` when it's running 8.x, and any higher major is listed separately with 💥. An override can still choose one, since that's an explicit decision.
 
 In JSON, the warning is `data_upgrade_warning`. It doesn't affect the version status or the counts.
 
