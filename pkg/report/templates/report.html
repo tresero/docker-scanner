@@ -52,6 +52,12 @@
     <td style="{{.Styles.TdAlt}}"><strong>{{.DowngradeCount}} ⬇️</strong></td>
   </tr>
   {{end}}
+  {{if gt .ContainerProblems 0}}
+  <tr>
+    <td style="{{.Styles.TdAlt}}">Container problems</td>
+    <td style="{{.Styles.TdAlt}}"><span style="{{.Styles.Warn}}">{{.ContainerProblems}} 🚨</span></td>
+  </tr>
+  {{end}}
   <tr>
     <td style="{{if gt .DowngradeCount 0}}{{.Styles.Td}}{{else}}{{.Styles.TdAlt}}{{end}}">Security issues</td>
     <td style="{{if gt .DowngradeCount 0}}{{.Styles.Td}}{{else}}{{.Styles.TdAlt}}{{end}}">
@@ -101,7 +107,8 @@
     <td style="{{$s.Td}}"><code style="{{$s.Code}}">{{$r.Image.Registry}}/{{$r.Image.Name}}</code></td>
     <td style="{{$s.Td}}"><code style="{{$s.Code}}">{{$r.Image.Tag}}</code></td>
     <td style="{{$s.Td}}">
-      {{if eq $r.RunningVersion "unknown"}}<span style="{{$s.Unknown}}">latest (unknown)</span>{{else if $r.RunningVersion}}<code style="{{$s.Code}}">{{$r.RunningVersion}}</code>{{else}}<span style="{{$s.Muted}}">not running</span>{{end}}
+      {{if eq $r.RunningVersion "unknown"}}<span style="{{$s.Unknown}}">latest (unknown)</span>{{else if $r.RunningVersion}}<code style="{{$s.Code}}">{{$r.RunningVersion}}</code>{{end}}
+      {{with runningLabel $r}}{{if containerProblem $r}}<span style="{{$s.Warn}}">🚨 {{.}}</span>{{else}}<span style="{{$s.Muted}}">{{.}}</span>{{end}}{{end}}
     </td>
     <td style="{{$s.Td}}">
       {{if $r.RecommendedVersion}}<code style="{{$s.Code}}">{{$r.RecommendedVersion}}</code>{{if and $r.RecommendedAge (ne $r.RecommendedAge "age unknown")}} <small>({{$r.RecommendedAge}})</small>{{else if eq $r.RecommendedAge "age unknown"}} <small>(age unknown)</small>{{end}}{{if $r.MajorVersionJump}} 💥{{end}}{{if $r.IsDowngrade}} ⬇️{{end}}{{else}}—{{end}}{{if $r.NewerMajorVersion}}<br><small>💥 newer major: <code style="{{$s.Code}}">{{$r.NewerMajorVersion}}</code></small>{{end}}{{if $r.RecommendationNote}}<br><small style="{{$s.Muted}}">{{$r.RecommendationNote}}</small>{{end}}
@@ -126,7 +133,7 @@
 <ul>
   <li><strong>Service:</strong> {{.Image.Service}}</li>
   <li><strong>File:</strong> <code style="{{$s.Code}}">{{.File}}</code></li>
-  {{if .RunningVersion}}{{if eq .RunningVersion "unknown"}}<li><strong>Running:</strong> <span style="{{$s.Unknown}}">latest (unknown)</span></li>{{else}}<li><strong>Running:</strong> <code style="{{$s.Code}}">{{.RunningVersion}}</code></li>{{end}}{{else}}<li><strong>Running:</strong> <span style="{{$s.Muted}}">not running</span></li>{{end}}
+  <li><strong>Running:</strong> {{if eq .RunningVersion "unknown"}}<span style="{{$s.Unknown}}">latest (unknown)</span>{{else if .RunningVersion}}<code style="{{$s.Code}}">{{.RunningVersion}}</code>{{end}} {{$image := .}}{{with runningLabel $image}}{{if containerProblem $image}}<span style="{{$s.Warn}}">🚨 {{.}}</span>{{else}}<span style="{{$s.Muted}}">{{.}}</span>{{end}}{{end}}</li>
   {{if .RecommendedVersion}}<li><strong>Recommended:</strong> <code style="{{$s.Code}}">{{.RecommendedVersion}}</code>{{if and .RecommendedAge (ne .RecommendedAge "age unknown")}} (released {{.RecommendedAge}} ago){{else if eq .RecommendedAge "age unknown"}} (age unknown){{end}}</li>{{end}}
   {{if .MajorVersionJump}}<li><span style="{{$s.Boom}}">💥 Major version jump — review breaking changes before upgrading</span></li>{{end}}
   {{if .IsDowngrade}}<li><span style="{{$s.Downgrade}}">⬇️ DOWNGRADE — recommended is older than running version, verify database compatibility</span></li>{{end}}

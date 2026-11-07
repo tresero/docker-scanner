@@ -86,7 +86,10 @@ var legendEntries = []LegendEntry{
 	{Symbol: "⬇️", SymbolStyle: "", Meaning: "Recommended version is older than running version — downgrade risk (beige row)"},
 	{Symbol: "💥", SymbolStyle: "", Meaning: "Recommended version is a major version jump — review breaking changes"},
 	{Symbol: "latest (unknown)", SymbolStyle: styles.Unknown, Meaning: "Container is running but its exact version could not be determined"},
-	{Symbol: "not running", SymbolStyle: styles.Muted, Meaning: "Image is defined in compose but no container is currently running"},
+	{Symbol: "🚨", SymbolStyle: styles.Warn, Meaning: "Container needs attention: unhealthy, restarting, dead, or exited with an error"},
+	{Symbol: "exited (0)", SymbolStyle: styles.Muted, Meaning: "Container stopped cleanly, with exit code 0"},
+	{Symbol: "not created", SymbolStyle: styles.Muted, Meaning: "Image is defined in compose but no container exists"},
+	{Symbol: "not running", SymbolStyle: styles.Muted, Meaning: "No container was found, and Docker could not be asked"},
 	{Symbol: "(age unknown)", SymbolStyle: styles.Muted, Meaning: "Recommended version exists but its release date could not be fetched"},
 }
 
@@ -101,6 +104,7 @@ type htmlData struct {
 	DowngradeCount      int
 	GoodCount           int
 	UnverifiedCount     int
+	ContainerProblems   int
 	SecurityCount       int
 	HasLatest           bool
 	HasSecurityIssues   bool
@@ -117,7 +121,9 @@ func GenerateHTML(results []models.ImageInfo) string {
 	data := buildHTMLData(withResolvedRunning(results))
 
 	funcMap := template.FuncMap{
-		"odd": func(i int) bool { return i%2 == 1 },
+		"odd":              func(i int) bool { return i%2 == 1 },
+		"runningLabel":     runningLabel,
+		"containerProblem": containerProblem,
 		"imageStatus": func(r models.ImageInfo) string {
 			switch ClassifyImage(r) {
 			case StatusFloating:
@@ -172,6 +178,7 @@ func buildHTMLData(results []models.ImageInfo) htmlData {
 		DowngradeCount:     downgrades,
 		GoodCount:          good,
 		UnverifiedCount:    countUnverified(results),
+		ContainerProblems:  countContainerProblems(results),
 		SecurityCount:      len(allIssues),
 		HasLatest:          floating > 0,
 		HasSecurityIssues:  len(allIssues) > 0,

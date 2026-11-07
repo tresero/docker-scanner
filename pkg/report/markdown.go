@@ -71,6 +71,9 @@ func buildSummary(w *mdWriter, results []models.ImageInfo) {
 	if downgrades > 0 {
 		rows = append(rows, []string{"Downgrades", fmt.Sprintf("**%d** :arrow_down:", downgrades)})
 	}
+	if problems := countContainerProblems(results); problems > 0 {
+		rows = append(rows, []string{"Container problems", fmt.Sprintf("**%d** 🚨", problems)})
+	}
 	rows = append(rows, []string{"Security issues", securityStatus})
 
 	w.H2("Summary")
@@ -117,12 +120,13 @@ func buildImageTable(w *mdWriter, results []models.ImageInfo) {
 			recommended += " _" + r.RecommendationNote + "_"
 		}
 
-		running := "not running"
+		version := ""
 		if r.RunningVersion == "unknown" {
-			running = "`latest` (unknown)"
+			version = "`latest` (unknown)"
 		} else if r.RunningVersion != "" {
-			running = fmt.Sprintf("`%s`", r.RunningVersion)
+			version = fmt.Sprintf("`%s`", r.RunningVersion)
 		}
+		running := runningText(r, version)
 
 		rows = append(rows, []string{
 			status, r.Image.Project, r.Image.Service, fullImage, tag, running, recommended,
@@ -171,7 +175,9 @@ func buildLatestDetails(w *mdWriter, results []models.ImageInfo) {
 		details = append(details, fmt.Sprintf("**File:** `%s`", r.File))
 
 		if r.RunningVersion != "" {
-			details = append(details, fmt.Sprintf("**Running:** `%s`", r.RunningVersion))
+			details = append(details, fmt.Sprintf("**Running:** %s", runningText(r, fmt.Sprintf("`%s`", r.RunningVersion))))
+		} else if label := runningText(r, ""); label != "" {
+			details = append(details, fmt.Sprintf("**Running:** %s", label))
 		}
 
 		if r.RecommendedVersion != "" {
