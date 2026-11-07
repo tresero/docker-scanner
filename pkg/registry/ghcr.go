@@ -93,19 +93,19 @@ func (r *GHCRRegistry) FetchVersions(image models.Image) ([]models.RegistryVersi
 
 	versions := FilterAndSortTags(allTags)
 
-	fillReleaseDates(versions, image.Tag, func(tag string) time.Time {
-		return fetchManifestDate(image.Name, tag, token)
+	fillReleaseDates(versions, image.Tag, func(tag string) (time.Time, string) {
+		return fetchManifestDetails(image.Name, tag, token)
 	})
 
 	return versions, nil
 }
 
-// fillReleaseDates sets ReleasedAt using fetch, which is costly: each GHCR tag
+// fillReleaseDates sets ReleasedAt and Digest using fetch, which is costly: each GHCR tag
 // takes 3 HTTP requests (manifest-list -> platform-manifest -> config-blob).
 // Only the newest config.VersionFetchLimit tags that fit the pin and aren't
 // below it are dated, so images with thousands of tags stay cheap. Pick treats
 // the rest as undated.
-func fillReleaseDates(versions []models.RegistryVersion, currentTag string, fetch func(tag string) time.Time) {
+func fillReleaseDates(versions []models.RegistryVersion, currentTag string, fetch func(tag string) (time.Time, string)) {
 	floor := versionFloor(currentTag, "")
 	fetched := 0
 	for i := range versions {
@@ -115,7 +115,7 @@ func fillReleaseDates(versions []models.RegistryVersion, currentTag string, fetc
 		if !fitsPin(currentTag, versions[i].Tag) || !notBelow(versions[i].Tag, floor) {
 			continue
 		}
-		versions[i].ReleasedAt = fetch(versions[i].Tag)
+		versions[i].ReleasedAt, versions[i].Digest = fetch(versions[i].Tag)
 		fetched++
 	}
 }
@@ -336,35 +336,36 @@ func httpGetWithAuthFull(url, auth, accept string) ([]byte, http.Header, error) 
 	return body, resp.Header, err
 }
 
-// fetchManifestDate resolves the build timestamp for a tag through GHCR's
-// 3-step chain: manifest-list -> platform manifest -> config blob.
+// fetchManifestDetails resolves a tag's digest and its build timestamp through
+// GHCR's 3-step chain: manifest-list -> platform manifest -> config blob.
 //
-// Returns time.Time{} (zero) on any failure — including the "image is
-// single-arch and not a list" case. The caller (PickSafeVersion) treats
-// zero values as "unknown" and falls back to position-based recommendation.
-func fetchManifestDate(imageName, tag, token string) time.Time {
+// Returns a zero time on any failure, including the "image is single-arch and
+// not a list" case. Pick treats zero values as "unknown" and falls back to a
+// position-based recommendation.
+func fetchManifestDetails(imageName, tag, token string) (time.Time, string) {
 	// Step 1: manifest list
 	listURL := fmt.Sprintf("https://ghcr.io/v2/%s/manifests/%s", imageName, tag)
-	listBody, err := httpGetWithAuth(listURL, "Bearer "+token, manifestAcceptHeader)
+	listBody, headers, err := httpGetWithAuthFull(listURL, "Bearer "+token, manifestAcceptHeader)
 	if err != nil {
-		return time.Time{}
+		return time.Time{}, ""
 	}
+	digest := headers.Get("Docker-Content-Digest")
 
 	platformDigest, err := pickAmd64ManifestDigest(listBody)
 	if err != nil {
-		return time.Time{}
+		return time.Time{}, digest
 	}
 
 	// Step 2: platform manifest
 	platformURL := fmt.Sprintf("https://ghcr.io/v2/%s/manifests/%s", imageName, platformDigest)
 	platformBody, err := httpGetWithAuth(platformURL, "Bearer "+token, manifestAcceptHeader)
 	if err != nil {
-		return time.Time{}
+		return time.Time{}, digest
 	}
 
 	configDigest, err := extractConfigDigest(platformBody)
 	if err != nil {
-		return time.Time{}
+		return time.Time{}, digest
 	}
 
 	// Step 3: config blob. httpGetWithAuth follows redirects by default
@@ -373,12 +374,12 @@ func fetchManifestDate(imageName, tag, token string) time.Time {
 	blobURL := fmt.Sprintf("https://ghcr.io/v2/%s/blobs/%s", imageName, configDigest)
 	blobBody, err := httpGetWithAuth(blobURL, "Bearer "+token, "")
 	if err != nil {
-		return time.Time{}
+		return time.Time{}, digest
 	}
 
 	created, err := extractCreatedTimestamp(blobBody)
 	if err != nil {
-		return time.Time{}
+		return time.Time{}, digest
 	}
-	return created
+	return created, digest
 }

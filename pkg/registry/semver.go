@@ -241,6 +241,7 @@ func FilterAndSortDockerHubTags(tags []DockerHubTag) []models.RegistryVersion {
 		v := models.RegistryVersion{
 			Tag:      tag.Name,
 			Released: tag.LastUpdated,
+			Digest:   tag.Digest,
 		}
 		v.ReleasedAt = parseTimestamp(tag.LastUpdated)
 		versions = append(versions, v)

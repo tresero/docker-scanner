@@ -29,41 +29,6 @@ func (r *recommender) logf(format string, args ...any) {
 func (r *recommender) recommend(info *models.ImageInfo) {
 	imageName := info.Image.Registry + "/" + info.Image.Name
 
-	// Override path: trust the upstream source for this image,
-	// but still apply the safeDays cutoff.
-	if override := r.overrides.Find(imageName); override != nil {
-		r.logf("    Using override (%s → %s) for %s\n", override.Source, override.Repo, imageName)
-		rec, err := overrides.Resolve(override, r.getter, r.safeDays)
-		if err != nil {
-			r.logf("    Override failed for %s, falling back to registry: %v\n", imageName, err)
-			// Fall through to registry path below.
-		} else if rec == nil {
-			r.logf("    Override returned no release older than %d days for %s, falling back to registry\n", r.safeDays, imageName)
-			// Fall through to registry path below.
-		} else {
-			// Override gave us an upstream version — find the
-			// matching Docker tag so we recommend something
-			// the user can actually pull.
-			versions, verr := registry.Lookup(r.registries, info.Image)
-			dockerTag, majorJump := "", false
-			if verr == nil {
-				dockerTag, majorJump = registry.MatchOverride(versions, rec.Version, info.Image.Tag, info.RunningVersion)
-			}
-			if dockerTag != "" {
-				info.RecommendedVersion = dockerTag
-				info.RecommendedAge = rec.Age
-				info.MajorVersionJump = majorJump
-				r.logf("    Override %s matched Docker tag %s\n", rec.Version, dockerTag)
-				return
-			}
-			// No matching Docker tag found — the upstream version
-			// may not be packaged yet. Fall through to the registry
-			// path which picks the best available Docker tag.
-			r.logf("    Override %s has no matching Docker tag, falling back to registry\n", rec.Version)
-		}
-	}
-
-	// Registry path.
 	r.logf("    Fetching versions for %s\n", imageName)
 
 	versions, err := registry.Lookup(r.registries, info.Image)
@@ -74,19 +39,71 @@ func (r *recommender) recommend(info *models.ImageInfo) {
 		return
 	}
 
+	running, runningKnown := registry.ResolveRunning(versions, info.Image.Tag, info.RunningVersion, info.RunningDigests, info.RunningLabelVersion)
+	if runningKnown && running != info.RunningVersion {
+		info.ResolvedRunningVersion = running
+	}
+
+	// Override path: trust the upstream source for this image, but still apply
+	// the safeDays cutoff. An image whose real version is unknown skips it, since
+	// nothing could show that its release isn't a downgrade.
+	if override := r.overrides.Find(imageName); override != nil && runningKnown {
+		if r.applyOverride(info, override, versions, running) {
+			return
+		}
+	}
+
+	// Registry path.
 	info.AvailableVersions = registry.DisplayVersions(versions)
 
-	pick := registry.Pick(registry.PickInput{
+	input := registry.PickInput{
 		Versions:       versions,
 		CurrentTag:     info.Image.Tag,
-		RunningVersion: info.RunningVersion,
+		RunningVersion: running,
+		RunningUnknown: !runningKnown,
 		SafeDays:       r.safeDays,
 		Now:            r.now(),
-	})
+	}
+	if !runningKnown {
+		input.RunningVersion = ""
+	}
+
+	pick := registry.Pick(input)
 	info.RecommendedVersion = pick.Version
 	info.RecommendedAge = pick.Age
 	info.MajorVersionJump = pick.MajorJump
 	info.RecommendationNote = pick.Note
 	info.NewerMajorVersion = pick.NewerMajor
 	info.Unverified = pick.Unverified
+}
+
+// applyOverride recommends an upstream release if a registry tag matches it. It
+// returns false if the image should fall through to the registry path.
+func (r *recommender) applyOverride(info *models.ImageInfo, override *overrides.Override, versions []models.RegistryVersion, running string) bool {
+	imageName := info.Image.Registry + "/" + info.Image.Name
+	r.logf("    Using override (%s → %s) for %s\n", override.Source, override.Repo, imageName)
+
+	rec, err := overrides.Resolve(override, r.getter, r.safeDays)
+	if err != nil {
+		r.logf("    Override failed for %s, falling back to registry: %v\n", imageName, err)
+		return false
+	}
+	if rec == nil {
+		r.logf("    Override returned no release older than %d days for %s, falling back to registry\n", r.safeDays, imageName)
+		return false
+	}
+
+	// Find the matching Docker tag so we recommend something the user can
+	// actually pull. The upstream version may not be packaged yet.
+	dockerTag, majorJump := registry.MatchOverride(versions, rec.Version, info.Image.Tag, running)
+	if dockerTag == "" {
+		r.logf("    Override %s has no matching Docker tag, falling back to registry\n", rec.Version)
+		return false
+	}
+
+	info.RecommendedVersion = dockerTag
+	info.RecommendedAge = rec.Age
+	info.MajorVersionJump = majorJump
+	r.logf("    Override %s matched Docker tag %s\n", rec.Version, dockerTag)
+	return true
 }

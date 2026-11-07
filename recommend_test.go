@@ -239,3 +239,155 @@ func TestRecommend_FailedLookupSaysSo(t *testing.T) {
 		})
 	}
 }
+
+// TestRecommend_FindsTheRealRunningVersion covers tags that don't say what's
+// running. The postgres and mariadb digests match what Docker Hub publishes, and
+// a real container's digest was confirmed to match them.
+func TestRecommend_FindsTheRealRunningVersion(t *testing.T) {
+	dayOld := testNow.AddDate(0, 0, -1)
+	old := testNow.AddDate(0, -4, 0)
+	postgres := []models.RegistryVersion{
+		{Tag: "18.4-alpine", ReleasedAt: old, Digest: "sha256:pg18"},
+		{Tag: "16.15-alpine", ReleasedAt: dayOld, Digest: "sha256:pg1615"},
+		{Tag: "16.14-alpine", ReleasedAt: old, Digest: "sha256:pg1614"},
+	}
+	mariadb := []models.RegistryVersion{
+		{Tag: "11.4.13", ReleasedAt: old, Digest: "sha256:m13"},
+		{Tag: "11.4.12", ReleasedAt: old.AddDate(0, -1, 0), Digest: "sha256:m12"},
+	}
+	tests := []struct {
+		name         string
+		pin          string
+		usesLatest   bool
+		running      string
+		digests      []string
+		label        string
+		versions     []models.RegistryVersion
+		want         string
+		wantResolved string
+		wantMajor    string
+		wantStatus   report.ImageStatus
+		wantNote     string
+	}{
+		{
+			name: "really on 16.15 is never offered 16.14", pin: "16-alpine", running: "16-alpine",
+			digests: []string{"sha256:pg1615"}, versions: postgres,
+			wantResolved: "16.15-alpine", wantMajor: "18.4-alpine", wantStatus: report.StatusGood,
+			wantNote: "already on the newest version",
+		},
+		{
+			name: "really on 16.14 stays there while 16.15 waits", pin: "16-alpine", running: "16-alpine",
+			digests: []string{"sha256:pg1614"}, versions: postgres,
+			want: "16.14-alpine", wantResolved: "16.14-alpine", wantMajor: "18.4-alpine", wantStatus: report.StatusGood,
+			wantNote: "newest is 16.15-alpine",
+		},
+		{
+			name: "an image rebuilt since it was pulled can't be placed", pin: "16-alpine", running: "16-alpine",
+			digests: []string{"sha256:pulled-months-ago"}, versions: postgres,
+			wantMajor: "18.4-alpine", wantStatus: report.StatusUnverified,
+			wantNote: "can't tell which version is running",
+		},
+		{
+			name: "nothing running can take the newest safe tag", pin: "16-alpine",
+			versions: postgres,
+			want:     "16.14-alpine", wantMajor: "18.4-alpine", wantStatus: report.StatusUpgrade,
+		},
+		{
+			name: "11.4 really on 11.4.13 is up to date, not an upgrade", pin: "11.4", running: "11.4",
+			digests: []string{"sha256:m13"}, versions: mariadb,
+			want: "11.4.13", wantResolved: "11.4.13", wantStatus: report.StatusGood,
+		},
+		{
+			name: "11.4 really on 11.4.12 has an upgrade", pin: "11.4", running: "11.4",
+			digests: []string{"sha256:m12"}, versions: mariadb,
+			want: "11.4.13", wantResolved: "11.4.12", wantStatus: report.StatusUpgrade,
+		},
+		{
+			name: "a version label places a partial tag", pin: "11.4", running: "11.4",
+			label: "11.4.13", versions: mariadb,
+			want: "11.4.13", wantResolved: "11.4.13", wantStatus: report.StatusGood,
+		},
+		{
+			name: "a floating tag with a digest match is held to it", pin: "latest", usesLatest: true, running: "unknown",
+			digests: []string{"sha256:m13"}, versions: mariadb,
+			want: "11.4.13", wantResolved: "11.4.13", wantStatus: report.StatusFloating,
+		},
+		{
+			name: "a floating tag that can't be placed gets no recommendation", pin: "latest", usesLatest: true, running: "unknown",
+			versions:   mariadb,
+			wantStatus: report.StatusFloating,
+			wantNote:   "can't tell which version is running",
+		},
+		{
+			name: "a full version pin needs no lookup", pin: "11.4.12", running: "11.4.12",
+			versions: mariadb,
+			want:     "11.4.13", wantStatus: report.StatusUpgrade,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			info := models.ImageInfo{
+				Image:               models.Image{Registry: "docker.io", Name: "app", Tag: tt.pin},
+				UsesLatest:          tt.usesLatest,
+				RunningVersion:      tt.running,
+				RunningDigests:      tt.digests,
+				RunningLabelVersion: tt.label,
+			}
+			newTestRecommender(tt.versions).recommend(&info)
+
+			if info.RecommendedVersion != tt.want {
+				t.Errorf("RecommendedVersion = %q, want %q (note %q)", info.RecommendedVersion, tt.want, info.RecommendationNote)
+			}
+			if info.ResolvedRunningVersion != tt.wantResolved {
+				t.Errorf("ResolvedRunningVersion = %q, want %q", info.ResolvedRunningVersion, tt.wantResolved)
+			}
+			if info.NewerMajorVersion != tt.wantMajor {
+				t.Errorf("NewerMajorVersion = %q, want %q", info.NewerMajorVersion, tt.wantMajor)
+			}
+			if got := report.ClassifyImage(info); got != tt.wantStatus {
+				t.Errorf("ClassifyImage = %v, want %v", got, tt.wantStatus)
+			}
+			if !strings.Contains(info.RecommendationNote, tt.wantNote) {
+				t.Errorf("RecommendationNote = %q, want it to mention %q", info.RecommendationNote, tt.wantNote)
+			}
+		})
+	}
+}
+
+// TestRecommend_OverrideRespectsTheRealRunningVersion keeps the override path to
+// the same limit as the registry path.
+func TestRecommend_OverrideRespectsTheRealRunningVersion(t *testing.T) {
+	old := testNow.AddDate(0, 0, -10)
+	versions := []models.RegistryVersion{
+		{Tag: "3.0.0", ReleasedAt: old, Digest: "sha256:three"},
+		{Tag: "2.0.0", ReleasedAt: old, Digest: "sha256:two"},
+	}
+	tests := []struct {
+		name     string
+		digests  []string
+		want     string
+		wantNote string
+	}{
+		{"running above the override's release keeps the registry's answer", []string{"sha256:three"}, "3.0.0", ""},
+		{"can't be placed, so the override doesn't get to guess", nil, "", "can't tell which version is running"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			info := models.ImageInfo{
+				Image:          models.Image{Registry: "docker.io", Name: "app", Tag: "latest"},
+				RunningVersion: "unknown",
+				RunningDigests: tt.digests,
+			}
+			overrideRecommender(versions, "docker.io/app").recommend(&info)
+			if tt.want == "" && info.RecommendedVersion != "" {
+				t.Errorf("RecommendedVersion = %q, want empty", info.RecommendedVersion)
+			}
+			if tt.want != "" && info.RecommendedVersion != tt.want {
+				t.Errorf("RecommendedVersion = %q, want %q", info.RecommendedVersion, tt.want)
+			}
+			if !strings.Contains(info.RecommendationNote, tt.wantNote) {
+				t.Errorf("RecommendationNote = %q, want it to mention %q", info.RecommendationNote, tt.wantNote)
+			}
+		})
+	}
+}

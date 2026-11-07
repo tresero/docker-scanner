@@ -60,7 +60,7 @@ These rules live in separate places, so a change to what counts as a version may
 
 - `main.go` reads `XDG_CONFIG_HOME` and `HOME` and passes them in through `LoadOptions`. Packages take values as parameters; the one exception is `GITHUB_TOKEN`, read in `overrides.DefaultGetter`.
 - `overrides.Getter` is a function type, so tests inject a fake instead of making HTTP calls.
-- `parser.GetRunningVersion` shells out to the `docker` CLI through the `dockerOutput` variable, which tests fake. It returns an empty string when it finds nothing, and usually returns just the compose tag rather than the real version.
+- `parser.GetRunningVersion` shells out to the `docker` CLI through the `dockerOutput` variable, which tests fake. It returns an empty string when it finds nothing, and usually returns just the compose tag rather than the real version; `registry.ResolveRunning` finds the real one from the version label or digest.
 - `recommender` in `recommend.go` holds the per-image logic, with injected registries, getter, and clock.
 - `ImageInfo`'s JSON tags are public output that users consume with `jq`.
 

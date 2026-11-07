@@ -84,10 +84,13 @@ func main() {
 			}
 			version := parser.GetRunningVersion(name)
 			if version == "" {
-				composeName := images[i].Image.Project + "-" + images[i].Image.Service + "-1"
-				version = parser.GetRunningVersion(composeName)
+				name = images[i].Image.Project + "-" + images[i].Image.Service + "-1"
+				version = parser.GetRunningVersion(name)
 			}
 			images[i].RunningVersion = version
+			if version != "" {
+				images[i].RunningDigests, images[i].RunningLabelVersion = parser.GetRunningImageDetails(name)
+			}
 		}
 
 		if !*skipRemote {

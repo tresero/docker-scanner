@@ -1203,6 +1203,111 @@ func TestPick_Unverified(t *testing.T) {
 	}
 }
 
+func TestFilterAndSortDockerHubTags_KeepsDigests(t *testing.T) {
+	tag := hubTag("1.2.3", daysAgo(10))
+	tag.Digest = "sha256:abc"
+	versions := FilterAndSortDockerHubTags([]DockerHubTag{tag})
+	if len(versions) != 1 || versions[0].Digest != "sha256:abc" {
+		t.Errorf("versions = %+v", versions)
+	}
+}
+
+func TestResolveRunning(t *testing.T) {
+	versions := []models.RegistryVersion{
+		{Tag: "16.15", Digest: "sha256:plain15"},
+		{Tag: "16.15-alpine3.24", Digest: "sha256:alpine15"},
+		{Tag: "16.15-alpine", Digest: "sha256:alpine15"},
+		{Tag: "16.14-alpine", Digest: "sha256:alpine14"},
+		{Tag: "9.2", Digest: "sha256:line92"},
+		{Tag: "1.0.0"}, // no digest from this registry
+	}
+	tests := []struct {
+		name      string
+		pin       string
+		running   string
+		digests   []string
+		label     string
+		want      string
+		wantKnown bool
+	}{
+		{name: "nothing running has nothing to protect", pin: "16-alpine", want: "", wantKnown: true},
+		{name: "a full version is already known", pin: "5.2.3", running: "5.2.3", want: "5.2.3", wantKnown: true},
+		{name: "a version from a label is already known", pin: "latest", running: "2.3.4", want: "2.3.4", wantKnown: true},
+		{name: "a digest match prefers the pinned variant", pin: "16-alpine", running: "16-alpine", digests: []string{"sha256:alpine15"}, want: "16.15-alpine", wantKnown: true},
+		{name: "any of several digests can match", pin: "16-alpine", running: "16-alpine", digests: []string{"sha256:other", "sha256:alpine14"}, want: "16.14-alpine", wantKnown: true},
+		{name: "a digest match can be another variant", pin: "custom", running: "custom", digests: []string{"sha256:plain15"}, want: "16.15", wantKnown: true},
+		{name: "a digest on a major.minor tag counts", pin: "9.2", running: "9.2", digests: []string{"sha256:line92"}, want: "9.2", wantKnown: true},
+		{name: "an unknown tag resolves by digest", pin: "latest", running: "unknown", digests: []string{"sha256:alpine14"}, want: "16.14-alpine", wantKnown: true},
+		{name: "the label wins over a digest", pin: "11.4", running: "11.4", label: "11.4.9", digests: []string{"sha256:alpine14"}, want: "11.4.9", wantKnown: true},
+		{name: "a partial label isn't enough", pin: "11.4", running: "11.4", label: "11.4", want: "11.4", wantKnown: false},
+		{name: "a rebuilt image's digest matches nothing", pin: "16-alpine", running: "16-alpine", digests: []string{"sha256:old"}, want: "16-alpine", wantKnown: false},
+		{name: "no digests for a partial pin", pin: "16-alpine", running: "16-alpine", want: "16-alpine", wantKnown: false},
+		{name: "an empty digest never matches a tag with none", pin: "1.0", running: "1.0", digests: []string{""}, want: "1.0", wantKnown: false},
+		{name: "a word pin with no match", pin: "apache", running: "apache", want: "apache", wantKnown: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, known := ResolveRunning(versions, tt.pin, tt.running, tt.digests, tt.label)
+			if got != tt.want || known != tt.wantKnown {
+				t.Errorf("ResolveRunning = (%q, %v), want (%q, %v)", got, known, tt.want, tt.wantKnown)
+			}
+		})
+	}
+}
+
+func TestPick_RunningUnknown(t *testing.T) {
+	tests := []struct {
+		name           string
+		pin            string
+		versions       []models.RegistryVersion
+		want           string
+		wantUnverified bool
+		wantNote       string
+	}{
+		{
+			name:           "a different version is withheld and named in the note",
+			pin:            "16-alpine",
+			versions:       []models.RegistryVersion{{Tag: "16.14-alpine", ReleasedAt: daysAgo(90)}},
+			wantUnverified: true,
+			wantNote:       "16.14-alpine",
+		},
+		{
+			name:     "the pin itself is safe to confirm",
+			pin:      "9.2",
+			versions: []models.RegistryVersion{{Tag: "9.2", ReleasedAt: daysAgo(30)}},
+			want:     "9.2",
+		},
+		{
+			name:           "nothing old enough is still not verified",
+			pin:            "16-alpine",
+			versions:       []models.RegistryVersion{{Tag: "16.15-alpine", ReleasedAt: hoursAgo(1)}},
+			wantUnverified: true,
+			wantNote:       "newest is 16.15-alpine",
+		},
+		{
+			name:           "missing dates are withheld too",
+			pin:            "16-alpine",
+			versions:       []models.RegistryVersion{{Tag: "16.15-alpine"}, {Tag: "16.14-alpine"}},
+			wantUnverified: true,
+			wantNote:       "16.14-alpine",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Pick(PickInput{Versions: tt.versions, CurrentTag: tt.pin, RunningUnknown: true, SafeDays: 3, Now: fixedNow})
+			if got.Version != tt.want {
+				t.Errorf("Version = %q, want %q", got.Version, tt.want)
+			}
+			if got.Unverified != tt.wantUnverified {
+				t.Errorf("Unverified = %v, want %v", got.Unverified, tt.wantUnverified)
+			}
+			if !strings.Contains(got.Note, tt.wantNote) {
+				t.Errorf("Note = %q, want it to mention %q", got.Note, tt.wantNote)
+			}
+		})
+	}
+}
+
 // TestFillReleaseDates guards the request count: each date costs 3 HTTP
 // requests on GHCR, so keeping the whole list must not fetch a date per tag.
 func TestFillReleaseDates(t *testing.T) {
@@ -1251,9 +1356,9 @@ func TestFillReleaseDates(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			versions := FilterAndSortTags(tt.tags)
 			var calls []string
-			fillReleaseDates(versions, tt.pin, func(tag string) time.Time {
+			fillReleaseDates(versions, tt.pin, func(tag string) (time.Time, string) {
 				calls = append(calls, tag)
-				return daysAgo(10)
+				return daysAgo(10), "sha256:" + tag
 			})
 			if len(calls) != tt.wantCount {
 				t.Fatalf("fetched %d dates, want %d", len(calls), tt.wantCount)
@@ -1267,6 +1372,9 @@ func TestFillReleaseDates(t *testing.T) {
 			for _, v := range versions {
 				if !v.ReleasedAt.IsZero() {
 					dated++
+					if v.Digest != "sha256:"+v.Tag {
+						t.Errorf("%s has digest %q", v.Tag, v.Digest)
+					}
 				}
 			}
 			if dated != tt.wantCount {

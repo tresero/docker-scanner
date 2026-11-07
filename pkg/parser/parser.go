@@ -2,6 +2,7 @@ package parser
 
 import (
 	"docker-scanner/pkg/models"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -203,23 +204,59 @@ func GetRunningVersion(containerName string) string {
 		return parts[1]
 	}
 
-	out, err = dockerOutput("inspect", "--format",
+	if version := versionLabel(containerName); version != "" {
+		return version
+	}
+	return "unknown"
+}
+
+// versionLabel returns the image's version label, or "" if it has none. A label
+// inherited from a base image describes that image, so it's ignored.
+func versionLabel(containerName string) string {
+	out, err := dockerOutput("inspect", "--format",
 		"{{index .Config.Labels \"org.opencontainers.image.version\"}}", containerName)
 	if err != nil {
-		return "unknown"
+		return ""
 	}
 
 	version := strings.TrimSpace(string(out))
-	if version == "" || version == "<no value>" {
-		return "unknown"
+	if version == "<no value>" {
+		return ""
 	}
 
 	refName, _ := dockerOutput("inspect", "--format",
 		"{{index .Config.Labels \"org.opencontainers.image.ref.name\"}}", containerName)
 	ref := strings.TrimSpace(string(refName))
 	if ref == "ubuntu" || ref == "debian" || ref == "alpine" {
-		return "unknown"
+		return ""
 	}
 
 	return version
+}
+
+// GetRunningImageDetails returns the running image's digests and version label,
+// which identify the real version when its tag doesn't. Anything Docker can't
+// provide comes back empty.
+func GetRunningImageDetails(containerName string) (digests []string, label string) {
+	label = versionLabel(containerName)
+
+	out, err := dockerOutput("inspect", "--format", "{{.Image}}", containerName)
+	if err != nil {
+		return nil, label
+	}
+	out, err = dockerOutput("image", "inspect", "--format", "{{json .RepoDigests}}", strings.TrimSpace(string(out)))
+	if err != nil {
+		return nil, label
+	}
+
+	var repoDigests []string
+	if err := json.Unmarshal(out, &repoDigests); err != nil {
+		return nil, label
+	}
+	for _, repoDigest := range repoDigests {
+		if _, digest, found := strings.Cut(repoDigest, "@"); found {
+			digests = append(digests, digest)
+		}
+	}
+	return digests, label
 }
