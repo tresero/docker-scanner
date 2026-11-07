@@ -29,6 +29,24 @@ When Docker is available on the host, docker-scanner queries the Docker daemon t
 
 Some images don't expose their version through standard labels or tags. These are shown as `latest (unknown)` in the report — which is itself a reason to pin to a specific version.
 
+### Container state
+
+The report also says what state each container is in:
+
+| State | Meaning | Shown as |
+|---|---|---|
+| `running` | Up, with its health check passing, starting, or not defined | The version alone |
+| `unhealthy` | Up, but failing its health check | 🚨 |
+| `restarting` | In a restart loop | 🚨 |
+| `exited` | Stopped, with its exit code | 🚨 if the code isn't 0 |
+| `dead` | Docker couldn't remove or stop it cleanly | 🚨 |
+| `paused`, `created` | Paused, or created but never started | Muted |
+| `not created` | In compose, with no container | Muted |
+
+Containers are found by `container_name`, by the name Compose generates, or by Compose's labels for that service and folder. If Docker can't be reached, the report says `not running` and the JSON leaves the state out, rather than calling everything never-created.
+
+In JSON, these are `container_state`, `exit_code` and `health` on each image, plus `container_problem_count` for the 🚨 total. They don't affect the version status or the other counts.
+
 ## The 72-hour rule
 
 By default, docker-scanner will not recommend a version that was published less than 3 days ago. The principle: let the early adopters find the landmines first.
@@ -112,6 +130,7 @@ The HTML report includes a legend, but for reference:
 | 🟡 | Upgrade available — a newer safe version exists |
 | 🔴 | Floating tag — uses `latest` or other unpinned tag |
 | ❓ | Not verified — the scan couldn't confirm this image's status, and the note says why |
+| 🚨 | Container needs attention: unhealthy, restarting, dead, or exited with an error |
 | 💥 | Major version jump in the recommendation |
 | `not running` | Image defined but no container running |
 | `(age unknown)` | Recommended version exists but release date couldn't be fetched |

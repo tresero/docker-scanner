@@ -78,18 +78,18 @@ func main() {
 			issues := security.RunAll(checkers, images[i].File)
 			images[i].SecurityIssues = append(images[i].SecurityIssues, issues...)
 
-			name := images[i].Image.ContainerName
-			if name == "" {
-				name = images[i].Image.Service
+			image := images[i].Image
+			container := parser.FindContainer(image.ContainerName, image.Project, image.Service, images[i].File)
+			images[i].ContainerState = container.State
+			images[i].ExitCode = container.ExitCode
+			images[i].Health = container.Health
+			if container.Name == "" {
+				continue
 			}
-			version := parser.GetRunningVersion(name)
-			if version == "" {
-				name = images[i].Image.Project + "-" + images[i].Image.Service + "-1"
-				version = parser.GetRunningVersion(name)
-			}
-			images[i].RunningVersion = version
-			if version != "" {
-				images[i].RunningDigests, images[i].RunningLabelVersion = parser.GetRunningImageDetails(name)
+
+			images[i].RunningVersion = parser.GetRunningVersion(container.Name)
+			if images[i].RunningVersion != "" {
+				images[i].RunningDigests, images[i].RunningLabelVersion = parser.GetRunningImageDetails(container.Name)
 			}
 		}
 

@@ -63,6 +63,61 @@ func countUnverified(results []models.ImageInfo) int {
 	return count
 }
 
+// runningLabel says what state the container is in, for reports to show beside
+// the running version. A healthy running container needs no label.
+func runningLabel(r models.ImageInfo) string {
+	switch r.ContainerState {
+	case "exited":
+		if r.ExitCode != nil {
+			return fmt.Sprintf("exited (%d)", *r.ExitCode)
+		}
+		return "exited"
+	case "running", "":
+		if r.RunningVersion == "" {
+			return "not running"
+		}
+		return ""
+	}
+	return r.ContainerState
+}
+
+// containerProblem reports whether the container needs attention now. A clean
+// exit, or a service that was never started, may be fine.
+func containerProblem(r models.ImageInfo) bool {
+	switch r.ContainerState {
+	case "unhealthy", "restarting", "dead":
+		return true
+	case "exited":
+		return r.ExitCode != nil && *r.ExitCode != 0
+	}
+	return false
+}
+
+func countContainerProblems(results []models.ImageInfo) int {
+	count := 0
+	for _, r := range results {
+		if containerProblem(r) {
+			count++
+		}
+	}
+	return count
+}
+
+// runningText is the running version and container state as plain text.
+func runningText(r models.ImageInfo, version string) string {
+	label := runningLabel(r)
+	if containerProblem(r) {
+		label = "🚨 " + label
+	}
+	switch {
+	case version == "":
+		return label
+	case label == "":
+		return version
+	}
+	return version + " " + label
+}
+
 // sameTag treats 2.8.11 and v2.8.11 as the same version.
 func sameTag(a, b string) bool {
 	return strings.TrimPrefix(a, "v") == strings.TrimPrefix(b, "v")
@@ -142,6 +197,9 @@ func writeSummary(sb *strings.Builder, results []models.ImageInfo) {
 	if downgrades > 0 {
 		sb.WriteString(fmt.Sprintf("  Downgrades:          %d  ⬇️\n", downgrades))
 	}
+	if problems := countContainerProblems(results); problems > 0 {
+		sb.WriteString(fmt.Sprintf("  Container problems:  %d  🚨\n", problems))
+	}
 	sb.WriteString(fmt.Sprintf("  Security issues:     %d", securityCount))
 	if securityCount > 0 {
 		sb.WriteString("  ⚠️")
@@ -174,13 +232,11 @@ func writeImageDetails(sb *strings.Builder, results []models.ImageInfo) {
 		sb.WriteString(fmt.Sprintf("      Project:   %s\n", r.Image.Project))
 		sb.WriteString(fmt.Sprintf("      Service:   %s\n", r.Image.Service))
 		sb.WriteString(fmt.Sprintf("      Tag:       %s\n", r.Image.Tag))
-		if r.RunningVersion == "unknown" {
-			sb.WriteString("      Running:   latest (unknown)\n")
-		} else if r.RunningVersion != "" {
-			sb.WriteString(fmt.Sprintf("      Running:   %s\n", r.RunningVersion))
-		} else {
-			sb.WriteString("      Running:   not running\n")
+		version := r.RunningVersion
+		if version == "unknown" {
+			version = "latest (unknown)"
 		}
+		sb.WriteString(fmt.Sprintf("      Running:   %s\n", runningText(r, version)))
 		sb.WriteString(fmt.Sprintf("      File:      %s\n", r.File))
 
 		if r.UsesLatest {

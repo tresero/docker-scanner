@@ -31,6 +31,9 @@ type ImageInfo struct {
 	Unverified          bool            `json:"unverified,omitempty"`            // The scan couldn't confirm this image's status; recommendation_note says why
 	NewerMajorVersion   string          `json:"newer_major_version,omitempty"`   // Newest safe tag on a higher major, when the pin's line is kept
 	UnresolvedVariables []string        `json:"unresolved_variables,omitempty"`  // Compose variables in image: with no value, so the real image isn't known
+	ContainerState      string          `json:"container_state,omitempty"`       // running, unhealthy, restarting, exited, created, paused, dead or "not created"; empty if Docker couldn't be asked
+	ExitCode            *int            `json:"exit_code,omitempty"`             // Set when the container has stopped
+	Health              string          `json:"health,omitempty"`                // Docker health check result, if the image defines one
 }
 
 // SecurityIssue represents a security finding
