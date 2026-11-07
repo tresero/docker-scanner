@@ -185,32 +185,6 @@ services:
 	}
 }
 
-func TestParse_SkipsServicesWithoutImage(t *testing.T) {
-	dir := t.TempDir()
-	composePath := writeCompose(t, dir, `
-services:
-  web:
-    image: nginx:latest
-  builder:
-    build: ./app
-`)
-
-	project := models.Project{
-		Name:         "test",
-		Path:         dir,
-		ComposeFiles: []string{composePath},
-	}
-
-	images, err := Parse(project, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(images) != 1 {
-		t.Errorf("expected 1 image (skip build-only), got %d", len(images))
-	}
-}
-
 func TestParse_SetsProjectAndService(t *testing.T) {
 	dir := t.TempDir()
 	composePath := writeCompose(t, dir, `

@@ -60,6 +60,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Loaded %d override(s)\n", len(overrideCfg.Overrides))
 	}
 
+	projects = parser.DropReferencedDockerfiles(projects, os.LookupEnv)
+
 	var allResults []models.ImageInfo
 
 	for _, project := range projects {
@@ -75,15 +77,28 @@ func main() {
 
 		checkers := security.DefaultCheckers()
 		for i := range images {
+			image := images[i].Image
+			// A standalone Dockerfile has no compose file to check, and no container.
+			if image.Service == "" {
+				continue
+			}
+
 			issues := security.RunAll(checkers, images[i].File)
 			images[i].SecurityIssues = append(images[i].SecurityIssues, issues...)
 
-			image := images[i].Image
 			container := parser.FindContainer(image.ContainerName, image.Project, image.Service, images[i].File)
 			images[i].ContainerState = container.State
 			images[i].ExitCode = container.ExitCode
 			images[i].Health = container.Health
 			if container.Name == "" {
+				continue
+			}
+
+			// A built image's tag says nothing about its base's version.
+			if images[i].Dockerfile != "" {
+				if !images[i].NoOwnLayers {
+					images[i].RunningBuildDate = parser.GetRunningImageBuildDate(container.Name)
+				}
 				continue
 			}
 

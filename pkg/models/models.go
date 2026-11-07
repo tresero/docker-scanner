@@ -39,6 +39,10 @@ type ImageInfo struct {
 	RunningBuildDate    string          `json:"running_build_date,omitempty"`    // When the running image was built, if Docker says
 	TagMismatch         bool            `json:"tag_mismatch,omitempty"`          // Compose pins a different version than the container was created from
 	TagMismatchDowngrade bool           `json:"tag_mismatch_downgrade,omitempty"` // The next up -d would move to a lower version
+	Dockerfile          string          `json:"dockerfile,omitempty"`            // Set when this row is a Dockerfile's base image rather than a pulled image
+	LocalImage          string          `json:"local_image,omitempty"`           // The image: name of a service that's built locally
+	SkipLookup          bool            `json:"-"`                               // The parser found nothing a registry could answer; the note says why
+	NoOwnLayers         bool            `json:"-"`                               // The build adds no layers, so the image keeps its base's date and that date says nothing
 }
 
 // SecurityIssue represents a security finding
@@ -55,6 +59,7 @@ type Project struct {
 	Name      string   // e.g., "caddy"
 	Path      string   // Full path to project directory
 	ComposeFiles []string // Paths to compose files in this project
+	Dockerfiles  []string // Paths to Dockerfiles in a folder with no compose file
 }
 
 // RegistryVersion represents available version info

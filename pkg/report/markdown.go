@@ -122,6 +122,9 @@ func buildImageTable(w *mdWriter, results []models.ImageInfo) {
 		if r.NewerMajorVersion != "" {
 			recommended += fmt.Sprintf(" :boom: newer major `%s`", r.NewerMajorVersion)
 		}
+		if base := baseImageText(r); base != "" {
+			recommended += " 🏗️ " + base
+		}
 		if build := newerBuildText(r); build != "" {
 			recommended += " 🔄 " + build
 		}

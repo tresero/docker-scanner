@@ -37,6 +37,8 @@ Every recommendation must be a real, pullable tag taken from registry data. Upst
 
 `parseFile` expands Compose variables first (`pkg/parser/variables.go`): shell, then the `.env` beside the compose file, then the default. An image with an unresolved variable keeps `${NAME}` in its tag, shows ❓, and skips the lookup.
 
+A service with `build:` reports its Dockerfile's base image instead (`pkg/parser/dockerfile.go`), with no running version, because the built image's tag says nothing about its base. `SkipLookup` marks rows a registry can't answer.
+
 ### Tag classification
 
 These rules live in separate places, so a change to what counts as a version may need more than one edit:

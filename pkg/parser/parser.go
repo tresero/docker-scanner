@@ -20,6 +20,7 @@ type ComposeFile struct {
 
 type Service struct {
 	Image         string      `yaml:"image"`
+	Build         interface{} `yaml:"build"`
 	ContainerName string      `yaml:"container_name"`
 	Environment   interface{} `yaml:"environment"`
 }
@@ -49,6 +50,15 @@ func Parse(project models.Project, lookupEnv LookupEnv) ([]models.ImageInfo, err
 		results = append(results, images...)
 	}
 
+	for _, file := range project.Dockerfiles {
+		info := parseStandaloneDockerfile(file)
+		info.Image.Project = project.Name
+		if info.Image.Name == "" {
+			info.Image.Name = filepath.Base(file)
+		}
+		results = append(results, info)
+	}
+
 	return results, nil
 }
 
@@ -67,29 +77,23 @@ func parseFile(filePath string, projectName string, lookupEnv LookupEnv) ([]mode
 	lookup := projectLookup(filePath, lookupEnv)
 
 	for serviceName, service := range compose.Services {
-		if service.Image == "" {
+		var info models.ImageInfo
+		switch {
+		case service.Build != nil:
+			info = parseBuildService(service, filePath, lookup)
+		case service.Image != "":
+			ref, unresolved := expandVariables(service.Image, lookup)
+			info = imageRefInfo(ref, unresolved)
+		default:
 			continue
 		}
 
-		ref, unresolved := expandVariables(service.Image, lookup)
-
-		image := parseImageRef(ref)
-		image.Service = serviceName
-		image.Project = projectName
-		image.ContainerName = service.ContainerName
-
-		info := models.ImageInfo{
-			Image:      image,
-			File:       filePath,
-			UsesLatest: !looksLikeVersion(image.Tag),
-		}
-
-		// The real image isn't known, so there's nothing to look up or to call floating.
-		if len(unresolved) > 0 {
-			info.UnresolvedVariables = unresolved
-			info.UsesLatest = false
-			info.Unverified = true
-			info.RecommendationNote = "unresolved variable: " + strings.Join(unresolved, ", ")
+		info.File = filePath
+		info.Image.Service = serviceName
+		info.Image.Project = projectName
+		info.Image.ContainerName = service.ContainerName
+		if info.Image.Name == "" {
+			info.Image.Name = serviceName
 		}
 
 		results = append(results, info)
@@ -98,16 +102,46 @@ func parseFile(filePath string, projectName string, lookupEnv LookupEnv) ([]mode
 	return results, nil
 }
 
+// imageRefInfo describes an image reference with its variables already expanded.
+func imageRefInfo(ref string, unresolved []string) models.ImageInfo {
+	image := parseImageRef(ref)
+	info := models.ImageInfo{
+		Image:      image,
+		UsesLatest: !looksLikeVersion(image.Tag),
+	}
+
+	withoutDigest, _, pinnedByDigest := strings.Cut(ref, "@")
+	switch {
+	case pinnedByDigest:
+		// A digest can't float, whatever the tag beside it says.
+		info.UsesLatest = false
+		if lastTagColon(withoutDigest) < 0 {
+			info.Unverified = true
+			info.SkipLookup = true
+			info.RecommendationNote = "pinned by digest, with no tag to compare"
+		}
+	case len(unresolved) > 0:
+		// The real image isn't known, so there's nothing to look up or to call floating.
+		info.UnresolvedVariables = unresolved
+		info.UsesLatest = false
+		info.Unverified = true
+		info.SkipLookup = true
+		info.RecommendationNote = "unresolved variable: " + strings.Join(unresolved, ", ")
+	}
+	return info
+}
+
 func parseImageRef(ref string) models.Image {
 	image := models.Image{
 		Registry: "docker.io",
 		Tag:      "latest",
 	}
 
-	tagSplit := strings.SplitN(ref, ":", 2)
-	namePart := tagSplit[0]
-	if len(tagSplit) > 1 {
-		image.Tag = tagSplit[1]
+	ref, _, _ = strings.Cut(ref, "@")
+	namePart := ref
+	if colon := lastTagColon(ref); colon >= 0 {
+		namePart = ref[:colon]
+		image.Tag = ref[colon+1:]
 	}
 
 	parts := strings.Split(namePart, "/")
@@ -119,6 +153,16 @@ func parseImageRef(ref string) models.Image {
 	}
 
 	return image
+}
+
+// lastTagColon returns the index of the colon before a tag, or -1 if there's no
+// tag. A colon before the last slash is a registry port, as in localhost:5000/app.
+func lastTagColon(ref string) int {
+	colon := strings.LastIndex(ref, ":")
+	if colon < strings.LastIndex(ref, "/") {
+		return -1
+	}
+	return colon
 }
 
 func GetRawEnvironment(filePath string) (map[string][]string, error) {
