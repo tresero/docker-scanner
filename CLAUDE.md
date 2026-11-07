@@ -29,7 +29,7 @@ Every recommendation must be a real, pullable tag taken from registry data. Upst
 
 - **Registry path:** `registry.Lookup` → `FilterAndSortTags` or `FilterAndSortDockerHubTags` → `Pick`. Filtering drops arch-specific, pre-release, git-hash, and build-ID tags and removes partial tags (`5.0` when `5.0.2` exists). Pick gets the whole list; `DisplayVersions` caps `available_versions` at `config.VersionFetchLimit` (10) with a stricter filter.
 - **Override path:** tried first when an image has an override. `overrides.Resolve` picks an upstream release, then `registry.MatchOverride` must find a registry tag that fits the same pin rules. Any failure or missing match falls through to the registry path.
-- **Pin rules (`Pick`):** keep the pin's variant (`tagVariant`). A major or major.minor pin stays on its line and reports a higher major in `NewerMajor`. Never go below the higher of the pin and the running version (`versionFloor`).
+- **Pin rules (`Pick`):** keep the pin's variant (`tagVariant`). A major or major.minor pin stays on its line and reports a higher major in `NewerMajor`. `StayOnMajor` does the same for databases at any pin, because a new major might not start on their data. Never go below the higher of the pin and the running version (`versionFloor`).
 - **N-day rule:** take the newest stable tag older than the cutoff. If dates are known and nothing qualifies, recommend nothing and set `Note`. `positionFallback` runs only when no candidate has a date. Ages come from push dates, so rebuilds reset them (#25).
 - **Clock:** `Pick` takes `Now`, so tests use a fixed clock.
 

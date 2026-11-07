@@ -38,6 +38,7 @@ type PickInput struct {
 	CurrentTag     string
 	RunningVersion string // from the Docker daemon; empty when not running
 	RunningUnknown bool   // a container is running but its real version can't be determined
+	StayOnMajor    bool   // the image's data can't simply move to a new major, so report one instead of recommending it
 	SafeDays       int
 	Now            time.Time
 }
@@ -86,8 +87,8 @@ func Pick(in PickInput) SafePickResult {
 // pickVersion selects the newest stable version published at least SafeDays ago and
 // detects major version jumps. It keeps the pin's variant. A major or
 // major.minor pin stays on its own line, and any newer major is reported
-// separately in NewerMajor. It never recommends a version below the higher of
-// the pin and the running version.
+// separately in NewerMajor, and so does any pin with StayOnMajor. It never
+// recommends a version below the higher of the pin and the running version.
 //
 // Position fallback runs only when no stable tag has a date. If dates are
 // known and nothing is old enough, it recommends nothing and says why.
@@ -117,6 +118,9 @@ func pickVersion(in PickInput) SafePickResult {
 	floor := versionFloor(in.CurrentTag, in.RunningVersion)
 
 	major, minor, onLine := pinLine(in.CurrentTag)
+	if !onLine && in.StayOnMajor {
+		major, minor, onLine = currentMajorLine(in.CurrentTag, in.RunningVersion)
+	}
 	if !onLine {
 		return selectFromFloor(matching, in, floor)
 	}
@@ -144,6 +148,15 @@ func pickVersion(in PickInput) SafePickResult {
 	result := selectFromFloor(line, in, floor)
 	result.NewerMajor = newerMajor
 	return result
+}
+
+// currentMajorLine returns the major line of the higher of the pin and the running
+// version, or ok=false if neither has one, as with latest on a stopped container.
+func currentMajorLine(currentTag, runningVersion string) (major, minor int, ok bool) {
+	pinMajor, _, _ := SemverParts(currentTag)
+	runningMajor, _, _ := SemverParts(runningVersion)
+	major = max(pinMajor, runningMajor)
+	return major, -1, major >= 0
 }
 
 // selectFromFloor applies the age rule to the candidates at or above floor, and

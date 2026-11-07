@@ -28,7 +28,7 @@ type databaseFamily struct {
 var (
 	postgresFamily = &databaseFamily{warning: "postgres: a new major version won't start on the old data. Back up, then migrate with pg_upgrade or a dump and restore."}
 	mariadbFamily  = &databaseFamily{warning: "mariadb: a new major or minor version starts, but its data still needs upgrading. Back up, then run mariadb-upgrade or set MARIADB_AUTO_UPGRADE=1.", minorMatters: true}
-	mysqlFamily    = &databaseFamily{warning: "mysql: a new major or minor version upgrades its data on first start, and the old version won't start afterwards. Back up first.", minorMatters: true}
+	mysqlFamily    = &databaseFamily{warning: "mysql: a new major or minor version upgrades its data on first start, and the old version won't start afterwards. It won't start at all if it skips a long-term release, such as 8.0 straight to 9.7. Back up, then move through each long-term release in turn.", minorMatters: true}
 	mongoFamily    = &databaseFamily{warning: "mongo: a new version won't start if it skips a major. Back up, then upgrade one major at a time."}
 )
 
@@ -48,12 +48,22 @@ var databaseFamilies = map[string]*databaseFamily{
 	"mongodb-community-server": mongoFamily,
 }
 
+// IsDatabase reports whether an image is one of the known databases, whose data
+// can't simply move to a new major version.
+func IsDatabase(name string) bool {
+	return familyOf(name) != nil
+}
+
+func familyOf(name string) *databaseFamily {
+	return databaseFamilies[name[strings.LastIndex(name, "/")+1:]]
+}
+
 // DataUpgradeWarning says what upgrading a database takes, when an upgrade that
 // needs care is in play: a higher version is available, or a tag with no version
 // in it could move to one by itself. It returns "" for anything else, including
 // apps, because the scanner can't know how each app handles its data.
 func DataUpgradeWarning(in DataUpgradeInput) string {
-	family := databaseFamilies[in.Name[strings.LastIndex(in.Name, "/")+1:]]
+	family := familyOf(in.Name)
 	if family == nil {
 		return ""
 	}
