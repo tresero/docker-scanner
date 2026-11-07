@@ -104,6 +104,18 @@ func TestRecommend_NewerBuild(t *testing.T) {
 	}
 }
 
+func TestMarkTagMismatch(t *testing.T) {
+	info := models.ImageInfo{
+		Image:                  models.Image{Name: "postgres", Tag: "16.14-alpine"},
+		RunningVersion:         "16-alpine",
+		ResolvedRunningVersion: "16.15-alpine",
+	}
+	markTagMismatch(&info)
+	if !info.TagMismatch || !info.TagMismatchDowngrade {
+		t.Errorf("TagMismatch = %v, TagMismatchDowngrade = %v, want both true", info.TagMismatch, info.TagMismatchDowngrade)
+	}
+}
+
 // lookupCounter counts registry lookups.
 type lookupCounter struct {
 	fakeRegistry

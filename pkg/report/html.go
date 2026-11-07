@@ -88,6 +88,7 @@ var legendEntries = []LegendEntry{
 	{Symbol: "latest (unknown)", SymbolStyle: styles.Unknown, Meaning: "Container is running but its exact version could not be determined"},
 	{Symbol: "🚨", SymbolStyle: styles.Warn, Meaning: "Container needs attention: unhealthy, restarting, dead, or exited with an error"},
 	{Symbol: "🔄", SymbolStyle: "", Meaning: "Newer build — the compose tag now points to a newer image than the one running; pull it to get base image fixes"},
+	{Symbol: "🔀", SymbolStyle: "", Meaning: "Compose pins a different version than the container is running, so the next up -d will change it"},
 	{Symbol: "exited (0)", SymbolStyle: styles.Muted, Meaning: "Container stopped cleanly, with exit code 0"},
 	{Symbol: "not created", SymbolStyle: styles.Muted, Meaning: "Image is defined in compose but no container exists"},
 	{Symbol: "not running", SymbolStyle: styles.Muted, Meaning: "No container was found, and Docker could not be asked"},
@@ -107,6 +108,7 @@ type htmlData struct {
 	UnverifiedCount     int
 	ContainerProblems   int
 	NewerBuilds         int
+	TagMismatches       int
 	SecurityCount       int
 	HasLatest           bool
 	HasSecurityIssues   bool
@@ -127,6 +129,7 @@ func GenerateHTML(results []models.ImageInfo) string {
 		"runningLabel":     runningLabel,
 		"containerProblem": containerProblem,
 		"newerBuildText":   newerBuildText,
+		"tagMismatchText":  tagMismatchText,
 		"imageStatus": func(r models.ImageInfo) string {
 			switch ClassifyImage(r) {
 			case StatusFloating:
@@ -183,6 +186,7 @@ func buildHTMLData(results []models.ImageInfo) htmlData {
 		UnverifiedCount:    countUnverified(results),
 		ContainerProblems:  countContainerProblems(results),
 		NewerBuilds:        countNewerBuilds(results),
+		TagMismatches:      countTagMismatches(results),
 		SecurityCount:      len(allIssues),
 		HasLatest:          floating > 0,
 		HasSecurityIssues:  len(allIssues) > 0,

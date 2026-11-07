@@ -16,6 +16,7 @@ type jsonReport struct {
 	SecurityCount  int                `json:"security_count"`
 	ContainerProblemCount int         `json:"container_problem_count"`
 	NewerBuildCount int               `json:"newer_build_count"`
+	TagMismatchCount int              `json:"tag_mismatch_count"`
 	Images         []models.ImageInfo `json:"images"`
 }
 
@@ -40,6 +41,7 @@ func GenerateJSON(results []models.ImageInfo) string {
 		SecurityCount:  securityCount,
 		ContainerProblemCount: countContainerProblems(results),
 		NewerBuildCount: countNewerBuilds(results),
+		TagMismatchCount: countTagMismatches(results),
 		Images:         results,
 	}
 

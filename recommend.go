@@ -84,6 +84,12 @@ func (r *recommender) recommend(info *models.ImageInfo) {
 	info.Unverified = pick.Unverified
 }
 
+// markTagMismatch records whether the next up -d would change the running version.
+// It needs the real running version, so it runs after recommend.
+func markTagMismatch(info *models.ImageInfo) {
+	info.TagMismatch, info.TagMismatchDowngrade = registry.CheckTagMismatch(info.Image.Tag, info.RunningVersion, info.ResolvedRunningVersion)
+}
+
 // checkNewerBuild reports whether the compose tag has moved past the running image.
 // A container on a different tag is left out: its digest will differ whether or
 // not the tag was rebuilt. A floating tag's running version is whatever its label

@@ -153,6 +153,32 @@ func countNewerBuilds(results []models.ImageInfo) int {
 	return count
 }
 
+// tagMismatchText warns that the next up -d will change the running version.
+func tagMismatchText(r models.ImageInfo) string {
+	if !r.TagMismatch {
+		return ""
+	}
+	running := r.RunningVersion
+	if r.ResolvedRunningVersion != "" {
+		running = r.ResolvedRunningVersion
+	}
+	effect := "change"
+	if r.TagMismatchDowngrade {
+		effect = "downgrade"
+	}
+	return fmt.Sprintf("compose %s, running %s: next up -d will %s this", r.Image.Tag, running, effect)
+}
+
+func countTagMismatches(results []models.ImageInfo) int {
+	count := 0
+	for _, r := range results {
+		if r.TagMismatch {
+			count++
+		}
+	}
+	return count
+}
+
 // sameTag treats 2.8.11 and v2.8.11 as the same version.
 func sameTag(a, b string) bool {
 	return strings.TrimPrefix(a, "v") == strings.TrimPrefix(b, "v")
@@ -238,6 +264,9 @@ func writeSummary(sb *strings.Builder, results []models.ImageInfo) {
 	if builds := countNewerBuilds(results); builds > 0 {
 		sb.WriteString(fmt.Sprintf("  Newer builds:        %d  🔄\n", builds))
 	}
+	if mismatches := countTagMismatches(results); mismatches > 0 {
+		sb.WriteString(fmt.Sprintf("  Tag mismatches:      %d  🔀\n", mismatches))
+	}
 	sb.WriteString(fmt.Sprintf("  Security issues:     %d", securityCount))
 	if securityCount > 0 {
 		sb.WriteString("  ⚠️")
@@ -301,6 +330,10 @@ func writeImageDetails(sb *strings.Builder, results []models.ImageInfo) {
 
 		if build := newerBuildText(r); build != "" {
 			sb.WriteString(fmt.Sprintf("      🔄 %s\n", build))
+		}
+
+		if mismatch := tagMismatchText(r); mismatch != "" {
+			sb.WriteString(fmt.Sprintf("      🔀 %s\n", mismatch))
 		}
 
 		if r.RecommendationNote != "" {
