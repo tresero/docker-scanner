@@ -40,6 +40,12 @@
       {{if gt .LatestCount 0}}<span style="{{.Styles.Warn}}">{{.LatestCount}} 🔴</span>{{else}}{{.LatestCount}}{{end}}
     </td>
   </tr>
+  {{if gt .UnverifiedCount 0}}
+  <tr>
+    <td style="{{.Styles.TdAlt}}">Not verified</td>
+    <td style="{{.Styles.TdAlt}}"><strong>{{.UnverifiedCount}} ❓</strong></td>
+  </tr>
+  {{end}}
   {{if gt .DowngradeCount 0}}
   <tr>
     <td style="{{.Styles.TdAlt}}">Downgrades</td>
@@ -86,9 +92,9 @@
   {{range $i, $r := .Images}}
   {{$s := $.Styles}}
   {{$status := imageStatus $r}}
-  <tr style="{{if eq $status "floating"}}{{$s.RowFloating}}{{else if eq $status "upgrade"}}{{$s.RowUpgrade}}{{else if eq $status "downgrade"}}{{$s.RowDowngrade}}{{else}}{{$s.RowGood}}{{end}}">
+  <tr style="{{if eq $status "floating"}}{{$s.RowFloating}}{{else if eq $status "upgrade"}}{{$s.RowUpgrade}}{{else if eq $status "downgrade"}}{{$s.RowDowngrade}}{{else if eq $status "unverified"}}{{$s.RowUnknown}}{{else}}{{$s.RowGood}}{{end}}">
     <td style="{{$s.Td}}">
-      {{if eq $status "floating"}}<span style="{{$s.Warn}}">🔴</span>{{else if eq $status "upgrade"}}🟡{{else if eq $status "downgrade"}}⬇️{{else}}<span style="{{$s.Ok}}">✅</span>{{end}}
+      {{if eq $status "floating"}}<span style="{{$s.Warn}}">🔴</span>{{else if eq $status "upgrade"}}🟡{{else if eq $status "downgrade"}}⬇️{{else if eq $status "unverified"}}❓{{else}}<span style="{{$s.Ok}}">✅</span>{{end}}
     </td>
     <td style="{{$s.Td}}">{{$r.Image.Project}}</td>
     <td style="{{$s.Td}}">{{$r.Image.Service}}</td>

@@ -35,6 +35,7 @@ type Styles struct {
 	RowFloating   template.CSS
 	RowUpgrade    template.CSS
 	RowGood       template.CSS
+	RowUnknown    template.CSS
 	RowDowngrade  template.CSS
 }
 
@@ -70,6 +71,7 @@ var styles = Styles{
 	RowFloating:  "background:#ffebe9;",
 	RowUpgrade:   "background:#fff8c5;",
 	RowGood:      "background:#dafbe1;",
+	RowUnknown:   "background:#eaeef2;",
 	RowDowngrade: "background:#f5e6d3;",
 }
 
@@ -80,6 +82,7 @@ var legendEntries = []LegendEntry{
 	{Symbol: "✅", SymbolStyle: styles.Ok, Meaning: "Image is pinned and up to date (green row)"},
 	{Symbol: "🟡", SymbolStyle: "", Meaning: "Upgrade available — a newer version exists (yellow row)"},
 	{Symbol: "🔴", SymbolStyle: styles.Warn, Meaning: "Image uses a floating tag like latest or main (red row)"},
+	{Symbol: "❓", SymbolStyle: "", Meaning: "Not verified — the scan could not confirm this image's status; the note says why (grey row)"},
 	{Symbol: "⬇️", SymbolStyle: "", Meaning: "Recommended version is older than running version — downgrade risk (beige row)"},
 	{Symbol: "💥", SymbolStyle: "", Meaning: "Recommended version is a major version jump — review breaking changes"},
 	{Symbol: "latest (unknown)", SymbolStyle: styles.Unknown, Meaning: "Container is running but its exact version could not be determined"},
@@ -97,6 +100,7 @@ type htmlData struct {
 	UpgradeCount        int
 	DowngradeCount      int
 	GoodCount           int
+	UnverifiedCount     int
 	SecurityCount       int
 	HasLatest           bool
 	HasSecurityIssues   bool
@@ -122,6 +126,8 @@ func GenerateHTML(results []models.ImageInfo) string {
 				return "upgrade"
 			case StatusDowngrade:
 				return "downgrade"
+			case StatusUnverified:
+				return "unverified"
 			default:
 				return "good"
 			}
@@ -165,6 +171,7 @@ func buildHTMLData(results []models.ImageInfo) htmlData {
 		UpgradeCount:       upgrades,
 		DowngradeCount:     downgrades,
 		GoodCount:          good,
+		UnverifiedCount:    countUnverified(results),
 		SecurityCount:      len(allIssues),
 		HasLatest:          floating > 0,
 		HasSecurityIssues:  len(allIssues) > 0,

@@ -64,6 +64,9 @@ func buildSummary(w *mdWriter, results []models.ImageInfo) {
 		{"Upgrades available", upgradeStatus},
 		{"Using floating tag", floatingStatus},
 	}
+	if unverified := countUnverified(results); unverified > 0 {
+		rows = append(rows, []string{"Not verified", fmt.Sprintf("**%d** :grey_question:", unverified)})
+	}
 	if downgrades > 0 {
 		rows = append(rows, []string{"Downgrades", fmt.Sprintf("**%d** :arrow_down:", downgrades)})
 	}
@@ -85,6 +88,8 @@ func buildImageTable(w *mdWriter, results []models.ImageInfo) {
 			status = ":yellow_circle:"
 		case StatusDowngrade:
 			status = ":arrow_down:"
+		case StatusUnverified:
+			status = ":grey_question:"
 		default:
 			status = ":white_check_mark:"
 		}

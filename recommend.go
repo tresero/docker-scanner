@@ -70,6 +70,7 @@ func (r *recommender) recommend(info *models.ImageInfo) {
 	if err != nil {
 		r.logf("    Warning: %v\n", err)
 		info.RecommendationNote = fmt.Sprintf("couldn't check for updates: %v", err)
+		info.Unverified = true
 		return
 	}
 
@@ -87,4 +88,5 @@ func (r *recommender) recommend(info *models.ImageInfo) {
 	info.MajorVersionJump = pick.MajorJump
 	info.RecommendationNote = pick.Note
 	info.NewerMajorVersion = pick.NewerMajor
+	info.Unverified = pick.Unverified
 }

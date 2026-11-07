@@ -107,6 +107,7 @@ The HTML report includes a legend, but for reference:
 | ✅ | Up to date — pinned to the latest safe version |
 | 🟡 | Upgrade available — a newer safe version exists |
 | 🔴 | Floating tag — uses `latest` or other unpinned tag |
+| ❓ | Not verified — the scan couldn't confirm this image's status, and the note says why |
 | 💥 | Major version jump in the recommendation |
 | `not running` | Image defined but no container running |
 | `(age unknown)` | Recommended version exists but release date couldn't be fetched |

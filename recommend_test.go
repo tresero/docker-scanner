@@ -228,6 +228,9 @@ func TestRecommend_FailedLookupSaysSo(t *testing.T) {
 			if info.RecommendedVersion != "" {
 				t.Errorf("RecommendedVersion = %q, want empty", info.RecommendedVersion)
 			}
+			if got := report.ClassifyImage(info); got != report.StatusUnverified {
+				t.Errorf("ClassifyImage = %v, want StatusUnverified", got)
+			}
 			for _, want := range []string{"couldn't check", "401"} {
 				if !strings.Contains(info.RecommendationNote, want) {
 					t.Errorf("RecommendationNote = %q, want it to mention %q", info.RecommendationNote, want)
