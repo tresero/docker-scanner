@@ -162,6 +162,46 @@ func TestRecommend_SkipLookup(t *testing.T) {
 	}
 }
 
+func TestMarkDataUpgrade(t *testing.T) {
+	tests := []struct {
+		name string
+		info models.ImageInfo
+		want string
+	}{
+		{
+			name: "a newer major reaches the warning",
+			info: models.ImageInfo{Image: models.Image{Name: "postgres", Tag: "16-alpine"}, RecommendedVersion: "16.14-alpine", NewerMajorVersion: "18.4-alpine"},
+			want: "pg_upgrade",
+		},
+		{
+			name: "the real running version is what's compared",
+			info: models.ImageInfo{Image: models.Image{Name: "mariadb", Tag: "11"}, RunningVersion: "11", ResolvedRunningVersion: "11.4.13", RecommendedVersion: "11.8.2"},
+			want: "mariadb-upgrade",
+		},
+		{
+			name: "a floating tag reaches the warning",
+			info: models.ImageInfo{Image: models.Image{Name: "mongo", Tag: "latest"}, UsesLatest: true},
+			want: "can move to a new version",
+		},
+		{
+			name: "an app gets no warning",
+			info: models.ImageInfo{Image: models.Image{Name: "pretix/standalone", Tag: "2026.6.0"}, RecommendedVersion: "2027.1.0"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			info := tt.info
+			markDataUpgrade(&info)
+			if tt.want == "" && info.DataUpgradeWarning != "" {
+				t.Errorf("warning = %q, want none", info.DataUpgradeWarning)
+			}
+			if !strings.Contains(info.DataUpgradeWarning, tt.want) {
+				t.Errorf("warning = %q, want it to mention %q", info.DataUpgradeWarning, tt.want)
+			}
+		})
+	}
+}
+
 func TestMarkTagMismatch(t *testing.T) {
 	info := models.ImageInfo{
 		Image:                  models.Image{Name: "postgres", Tag: "16.14-alpine"},

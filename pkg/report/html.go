@@ -89,6 +89,8 @@ var legendEntries = []LegendEntry{
 	{Symbol: "🚨", SymbolStyle: styles.Warn, Meaning: "Container needs attention: unhealthy, restarting, dead, or exited with an error"},
 	{Symbol: "🔄", SymbolStyle: "", Meaning: "Newer build — the compose tag now points to a newer image than the one running; pull it to get base image fixes"},
 	{Symbol: "🔀", SymbolStyle: "", Meaning: "Compose pins a different version than the container is running, so the next up -d will change it"},
+	{Symbol: "🗄️", SymbolStyle: styles.Warn, Meaning: "Database: upgrading it takes more than a new image, and the note says what to do"},
+	{Symbol: "Before upgrading", SymbolStyle: "", Meaning: "Docker only replaces the program, and the data stays as it was. Each app handles its own data differently. Back up first, and read the release notes for every version you are moving past. No 💥 does not mean an upgrade is safe for the data."},
 	{Symbol: "🏗️", SymbolStyle: "", Meaning: "Base image of a locally built image — rebuild to upgrade, because pulling won't apply"},
 	{Symbol: "exited (0)", SymbolStyle: styles.Muted, Meaning: "Container stopped cleanly, with exit code 0"},
 	{Symbol: "not created", SymbolStyle: styles.Muted, Meaning: "Image is defined in compose but no container exists"},

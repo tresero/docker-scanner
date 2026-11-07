@@ -352,6 +352,10 @@ func writeImageDetails(sb *strings.Builder, results []models.ImageInfo) {
 			sb.WriteString(fmt.Sprintf("      💥 Newer major: %s\n", r.NewerMajorVersion))
 		}
 
+		if r.DataUpgradeWarning != "" {
+			sb.WriteString(fmt.Sprintf("      🗄️  %s\n", r.DataUpgradeWarning))
+		}
+
 		if base := baseImageText(r); base != "" {
 			sb.WriteString(fmt.Sprintf("      🏗️  %s\n", base))
 		}
