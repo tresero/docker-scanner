@@ -35,11 +35,13 @@ func looksLikeVersion(tag string) bool {
 	return versionPattern.MatchString(tag)
 }
 
-func Parse(project models.Project) ([]models.ImageInfo, error) {
+// Parse reads a project's compose files. lookupEnv supplies the shell environment
+// for variables in image references, and can be nil.
+func Parse(project models.Project, lookupEnv LookupEnv) ([]models.ImageInfo, error) {
 	var results []models.ImageInfo
 
 	for _, file := range project.ComposeFiles {
-		images, err := parseFile(file, project.Name)
+		images, err := parseFile(file, project.Name, lookupEnv)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing %s: %w", file, err)
 		}
@@ -49,7 +51,7 @@ func Parse(project models.Project) ([]models.ImageInfo, error) {
 	return results, nil
 }
 
-func parseFile(filePath string, projectName string) ([]models.ImageInfo, error) {
+func parseFile(filePath string, projectName string, lookupEnv LookupEnv) ([]models.ImageInfo, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, err
@@ -61,13 +63,16 @@ func parseFile(filePath string, projectName string) ([]models.ImageInfo, error) 
 	}
 
 	var results []models.ImageInfo
+	lookup := projectLookup(filePath, lookupEnv)
 
 	for serviceName, service := range compose.Services {
 		if service.Image == "" {
 			continue
 		}
 
-		image := parseImageRef(service.Image)
+		ref, unresolved := expandVariables(service.Image, lookup)
+
+		image := parseImageRef(ref)
 		image.Service = serviceName
 		image.Project = projectName
 		image.ContainerName = service.ContainerName
@@ -76,6 +81,14 @@ func parseFile(filePath string, projectName string) ([]models.ImageInfo, error) 
 			Image:      image,
 			File:       filePath,
 			UsesLatest: !looksLikeVersion(image.Tag),
+		}
+
+		// The real image isn't known, so there's nothing to look up or to call floating.
+		if len(unresolved) > 0 {
+			info.UnresolvedVariables = unresolved
+			info.UsesLatest = false
+			info.Unverified = true
+			info.RecommendationNote = "unresolved variable: " + strings.Join(unresolved, ", ")
 		}
 
 		results = append(results, info)

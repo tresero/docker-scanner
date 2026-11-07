@@ -27,6 +27,11 @@ func (r *recommender) logf(format string, args ...any) {
 }
 
 func (r *recommender) recommend(info *models.ImageInfo) {
+	// The parser already marked it: looking up a partial name could only mislead.
+	if len(info.UnresolvedVariables) > 0 {
+		return
+	}
+
 	imageName := info.Image.Registry + "/" + info.Image.Name
 
 	r.logf("    Fetching versions for %s\n", imageName)
