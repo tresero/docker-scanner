@@ -143,19 +143,26 @@ func (e *registryStatusError) Error() string {
 
 // httpGet is a shared HTTP helper
 func httpGet(url string) ([]byte, error) {
+	body, _, err := httpGetFull(url)
+	return body, err
+}
+
+// httpGetFull is like httpGet but also returns response headers.
+func httpGetFull(url string) ([]byte, http.Header, error) {
 	client := &http.Client{
 		Timeout: time.Duration(config.HTTPTimeoutSeconds) * time.Second,
 	}
 
 	resp, err := client.Get(url)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query registry: %w", err)
+		return nil, nil, fmt.Errorf("failed to query registry: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, &registryStatusError{Status: resp.StatusCode, Challenge: resp.Header.Get("Www-Authenticate")}
+		return nil, nil, &registryStatusError{Status: resp.StatusCode, Challenge: resp.Header.Get("Www-Authenticate")}
 	}
 
-	return io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	return body, resp.Header, err
 }
