@@ -33,6 +33,10 @@ Every recommendation must be a real, pullable tag taken from registry data. Upst
 - **N-day rule:** take the newest stable tag older than the cutoff. If dates are known and nothing qualifies, recommend nothing and set `Note`. `positionFallback` runs only when no candidate has a date. Ages come from push dates, so rebuilds reset them (#25).
 - **Clock:** `Pick` takes `Now`, so tests use a fixed clock.
 
+### Image references
+
+`parseFile` expands Compose variables first (`pkg/parser/variables.go`): shell, then the `.env` beside the compose file, then the default. An image with an unresolved variable keeps `${NAME}` in its tag, shows ❓, and skips the lookup.
+
 ### Tag classification
 
 These rules live in separate places, so a change to what counts as a version may need more than one edit:

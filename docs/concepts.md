@@ -76,6 +76,8 @@ The pinned variant is kept: `8-alpine` only gets `-alpine` tags, and `latest` or
 - `compose.yml`
 - `compose.yaml`
 
+Variables in `image:` are expanded the way Compose does it: `${VAR}`, `$VAR`, `${VAR:-default}`, `${VAR-default}`, `${VAR:?error}` and `${VAR:+alternate}`. Values come from the shell, then from the `.env` file beside the compose file. If a variable has no value, the image shows as not verified (❓), the note names the variable, and no lookup is made.
+
 ### Skipped directories
 
 The scanner automatically skips `node_modules`, `vendor`, `.git`, and other dependency directories to avoid false positives from third-party compose files.

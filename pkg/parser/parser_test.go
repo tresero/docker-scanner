@@ -34,7 +34,7 @@ services:
 		ComposeFiles: []string{composePath},
 	}
 
-	images, err := Parse(project)
+	images, err := Parse(project, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ services:
 		ComposeFiles: []string{composePath},
 	}
 
-	images, err := Parse(project)
+	images, err := Parse(project, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ services:
 		ComposeFiles: []string{composePath},
 	}
 
-	images, err := Parse(project)
+	images, err := Parse(project, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ services:
 		ComposeFiles: []string{composePath},
 	}
 
-	images, err := Parse(project)
+	images, err := Parse(project, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ services:
 		ComposeFiles: []string{composePath},
 	}
 
-	images, err := Parse(project)
+	images, err := Parse(project, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ services:
 		ComposeFiles: []string{composePath},
 	}
 
-	images, err := Parse(project)
+	images, err := Parse(project, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +201,7 @@ services:
 		ComposeFiles: []string{composePath},
 	}
 
-	images, err := Parse(project)
+	images, err := Parse(project, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +225,7 @@ services:
 		ComposeFiles: []string{composePath},
 	}
 
-	images, err := Parse(project)
+	images, err := Parse(project, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +248,7 @@ func TestParse_InvalidYAML(t *testing.T) {
 		ComposeFiles: []string{composePath},
 	}
 
-	_, err := Parse(project)
+	_, err := Parse(project, nil)
 	if err == nil {
 		t.Error("expected error for invalid YAML")
 	}
@@ -475,7 +475,7 @@ services:
 				ComposeFiles: []string{composePath},
 			}
 
-			images, err := Parse(project)
+			images, err := Parse(project, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

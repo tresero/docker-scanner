@@ -35,6 +35,44 @@ func newTestRecommender(versions []models.RegistryVersion) *recommender {
 	}
 }
 
+// lookupCounter counts registry lookups.
+type lookupCounter struct {
+	fakeRegistry
+	lookups int
+}
+
+func (c *lookupCounter) FetchVersions(models.Image) ([]models.RegistryVersion, error) {
+	c.lookups++
+	return []models.RegistryVersion{{Tag: "9.9.9", ReleasedAt: testNow.AddDate(0, -1, 0)}}, nil
+}
+
+func TestRecommend_UnresolvedVariableSkipsTheLookup(t *testing.T) {
+	counter := &lookupCounter{}
+	r := &recommender{registries: []registry.Registry{counter}, safeDays: 3, now: func() time.Time { return testNow }}
+	const note = "unresolved variable: TAG"
+	info := models.ImageInfo{
+		Image:               models.Image{Registry: "ghcr.io", Name: "org/app", Tag: "${TAG}"},
+		UnresolvedVariables: []string{"TAG"},
+		Unverified:          true,
+		RecommendationNote:  note,
+	}
+
+	r.recommend(&info)
+
+	if counter.lookups != 0 {
+		t.Errorf("made %d registry lookups, want none", counter.lookups)
+	}
+	if info.RecommendedVersion != "" {
+		t.Errorf("RecommendedVersion = %q, want empty", info.RecommendedVersion)
+	}
+	if info.RecommendationNote != note {
+		t.Errorf("RecommendationNote = %q, want %q", info.RecommendationNote, note)
+	}
+	if got := report.ClassifyImage(info); got != report.StatusUnverified {
+		t.Errorf("ClassifyImage = %v, want StatusUnverified", got)
+	}
+}
+
 func TestRecommend_NoteReachesImageInfo(t *testing.T) {
 	r := newTestRecommender([]models.RegistryVersion{
 		{Tag: "2.11.9", ReleasedAt: testNow.Add(-time.Hour)},

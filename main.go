@@ -67,7 +67,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "  Parsing project: %s\n", project.Name)
 		}
 
-		images, err := parser.Parse(project)
+		images, err := parser.Parse(project, os.LookupEnv)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "  Error parsing %s: %v\n", project.Name, err)
 			continue
