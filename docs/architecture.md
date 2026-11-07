@@ -61,7 +61,7 @@ For each project found by the scanner:
 Different registries require different approaches:
 
 - **Docker Hub** returns tags ordered by `last_updated` (newest first), with timestamps. Straightforward.
-- **GHCR** returns tags in lexicographic order, oldest first, capped at 1000 per page. For images with many tags, the scanner uses a two-pass strategy: first page for old tags, then jumps to the user's current tag via the `last=` parameter to find newer versions nearby.
+- **GHCR** returns tags roughly in push order, oldest first, capped at 1000 per page. The newest versions are near the end, so the scanner reads every page, up to 100. If it can't read the whole list, the image shows as not verified, because a partial list makes old tags look like the newest ones.
 - **lscr.io** images are routed to Docker Hub (where they're mirrored) to get newest-first ordering.
 
 ## Contributing
