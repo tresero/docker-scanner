@@ -10,6 +10,13 @@ var ComposeFileNames = []string{
 	"compose.yaml",
 }
 
+// DockerfileNames lists the Dockerfile names to scan for, in folders with no
+// compose file
+var DockerfileNames = []string{
+	"dockerfile",
+	"containerfile",
+}
+
 // EnvFileNames lists the env filenames to check for
 var EnvFileNames = []string{
 	".env",

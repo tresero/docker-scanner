@@ -27,8 +27,8 @@ func (r *recommender) logf(format string, args ...any) {
 }
 
 func (r *recommender) recommend(info *models.ImageInfo) {
-	// The parser already marked it: looking up a partial name could only mislead.
-	if len(info.UnresolvedVariables) > 0 {
+	// The parser already said why: looking up a partial or local name could only mislead.
+	if info.SkipLookup {
 		return
 	}
 
@@ -95,6 +95,11 @@ func markTagMismatch(info *models.ImageInfo) {
 // not the tag was rebuilt. A floating tag's running version is whatever its label
 // says, so that one still counts.
 func (r *recommender) checkNewerBuild(info *models.ImageInfo) {
+	if info.Dockerfile != "" {
+		r.checkNewerBase(info)
+		return
+	}
+
 	if len(info.RunningDigests) == 0 || (info.RunningVersion != info.Image.Tag && info.Image.Tag != "latest") {
 		return
 	}
@@ -112,6 +117,26 @@ func (r *recommender) checkNewerBuild(info *models.ImageInfo) {
 		if !build.Pushed.IsZero() {
 			info.NewerBuildDate = build.Pushed.UTC().Format(time.RFC3339)
 		}
+	}
+}
+
+// checkNewerBase reports whether a built image's base has been pushed since it was
+// built. There's no digest to compare, because a build doesn't keep its base's.
+func (r *recommender) checkNewerBase(info *models.ImageInfo) {
+	built, err := time.Parse(time.RFC3339, info.RunningBuildDate)
+	if err != nil {
+		return
+	}
+
+	build, err := registry.CurrentBuild(r.registries, info.Image)
+	if err != nil {
+		r.logf("    Couldn't check for a newer base of %s: %v\n", info.Image.Name, err)
+		return
+	}
+
+	if build.Pushed.After(built) {
+		info.NewerBuildAvailable = true
+		info.NewerBuildDate = build.Pushed.UTC().Format(time.RFC3339)
 	}
 }
 

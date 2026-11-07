@@ -112,6 +112,16 @@ The pinned variant is kept: `8-alpine` only gets `-alpine` tags, and `latest` or
 
 Variables in `image:` are expanded the way Compose does it: `${VAR}`, `$VAR`, `${VAR:-default}`, `${VAR-default}`, `${VAR:?error}` and `${VAR:+alternate}`. Values come from the shell, then from the `.env` file beside the compose file. If a variable has no value, the image shows as not verified (❓), the note names the variable, and no lookup is made.
 
+### Dockerfiles
+
+A service with a `build:` section is built rather than pulled, so what can go out of date is its base image. The scanner reads the Dockerfile (from the string form of `build:`, the `context` and `dockerfile` keys, or `dockerfile_inline`) and reports the final stage's `FROM`, following stage names and resolving `ARG` defaults and `args:`. The row shows 🏗️, and upgrades say to rebuild, because pulling won't apply.
+
+A Dockerfile or Containerfile in a folder with no compose file gets a row too, unless a compose file builds it.
+
+The row's 🔄 means the base image was pushed after the running image was built. An image built `FROM scratch` has no base to check. If the Dockerfile can't be read, for example with a remote build context, the row shows ❓.
+
+In JSON, these rows have `dockerfile`, and `local_image` if the service has an `image:` name. `image` describes the base image. A standalone Dockerfile has no `service`.
+
 ### Skipped directories
 
 The scanner automatically skips `node_modules`, `vendor`, `.git`, and other dependency directories to avoid false positives from third-party compose files.
@@ -148,6 +158,7 @@ The HTML report includes a legend, but for reference:
 | ❓ | Not verified — the scan couldn't confirm this image's status, and the note says why |
 | 🔄 | Newer build: the compose tag now points to a newer image than the one running |
 | 🔀 | Compose pins a different version than the container is running |
+| 🏗️ | Base image of a locally built image: rebuild to upgrade |
 | 🚨 | Container needs attention: unhealthy, restarting, dead, or exited with an error |
 | 💥 | Major version jump in the recommendation |
 | `not running` | Image defined but no container running |

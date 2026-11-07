@@ -104,6 +104,64 @@ func TestRecommend_NewerBuild(t *testing.T) {
 	}
 }
 
+func TestRecommend_BaseImage(t *testing.T) {
+	versions := []models.RegistryVersion{
+		{Tag: "3.12.5-slim", ReleasedAt: testNow.AddDate(0, 0, -10)},
+		{Tag: "3.12.4-slim", ReleasedAt: testNow.AddDate(0, -2, 0)},
+	}
+	pushed := testNow.AddDate(0, 0, -5)
+	tests := []struct {
+		name      string
+		tag       string
+		builtDate string
+		build     registry.TagBuild
+		wantRec   string
+		wantNewer bool
+		wantAsked int
+	}{
+		{name: "a newer version of the base", tag: "3.12.4-slim", wantRec: "3.12.5-slim"},
+		{name: "built before the base was pushed", tag: "3.12-slim", builtDate: "2026-10-01T00:00:00Z", build: registry.TagBuild{Pushed: pushed}, wantRec: "3.12.5-slim", wantNewer: true, wantAsked: 1},
+		{name: "built after the base was pushed", tag: "3.12-slim", builtDate: "2026-11-05T00:00:00Z", build: registry.TagBuild{Pushed: pushed}, wantRec: "3.12.5-slim", wantAsked: 1},
+		{name: "no push date claims nothing", tag: "3.12-slim", builtDate: "2026-10-01T00:00:00Z", wantRec: "3.12.5-slim", wantAsked: 1},
+		{name: "a container that never ran can't be compared", tag: "3.12-slim", build: registry.TagBuild{Pushed: pushed}, wantRec: "3.12.5-slim"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := &buildRegistry{build: tt.build}
+			fake.versions = versions
+			r := &recommender{registries: []registry.Registry{fake}, safeDays: 3, now: func() time.Time { return testNow }}
+			info := models.ImageInfo{
+				Image:            models.Image{Registry: "docker.io", Name: "python", Tag: tt.tag},
+				Dockerfile:       "/srv/web/Dockerfile",
+				ContainerState:   "running",
+				RunningBuildDate: tt.builtDate,
+			}
+
+			r.recommend(&info)
+
+			if info.RecommendedVersion != tt.wantRec {
+				t.Errorf("RecommendedVersion = %q, want %q (note %q)", info.RecommendedVersion, tt.wantRec, info.RecommendationNote)
+			}
+			if info.NewerBuildAvailable != tt.wantNewer {
+				t.Errorf("NewerBuildAvailable = %v, want %v", info.NewerBuildAvailable, tt.wantNewer)
+			}
+			if fake.asked != tt.wantAsked {
+				t.Errorf("asked the registry %d times, want %d", fake.asked, tt.wantAsked)
+			}
+		})
+	}
+}
+
+func TestRecommend_SkipLookup(t *testing.T) {
+	counter := &lookupCounter{}
+	r := &recommender{registries: []registry.Registry{counter}, safeDays: 3, now: func() time.Time { return testNow }}
+	info := models.ImageInfo{Image: models.Image{Registry: "local", Name: "scratch"}, SkipLookup: true, RecommendationNote: "built FROM scratch"}
+	r.recommend(&info)
+	if counter.lookups != 0 {
+		t.Errorf("made %d registry lookups, want none", counter.lookups)
+	}
+}
+
 func TestMarkTagMismatch(t *testing.T) {
 	info := models.ImageInfo{
 		Image:                  models.Image{Name: "postgres", Tag: "16.14-alpine"},
@@ -134,6 +192,7 @@ func TestRecommend_UnresolvedVariableSkipsTheLookup(t *testing.T) {
 	info := models.ImageInfo{
 		Image:               models.Image{Registry: "ghcr.io", Name: "org/app", Tag: "${TAG}"},
 		UnresolvedVariables: []string{"TAG"},
+		SkipLookup:          true,
 		Unverified:          true,
 		RecommendationNote:  note,
 	}

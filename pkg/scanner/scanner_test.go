@@ -1,6 +1,7 @@
 package scanner
 
 import (
+    "fmt"
     "os"
     "path/filepath"
     "testing"
@@ -148,4 +149,63 @@ func TestScan_IgnoresNonComposeFiles(t *testing.T) {
     if len(projects[0].ComposeFiles) != 1 {
 	t.Errorf("expected 1 compose file, got %d", len(projects[0].ComposeFiles))
     }
+}
+
+func TestScan_Dockerfiles(t *testing.T) {
+	write := func(t *testing.T, root string, files ...string) {
+		t.Helper()
+		for _, file := range files {
+			path := filepath.Join(root, file)
+			if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("FROM alpine:3.20\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	tests := []struct {
+		name            string
+		files           []string
+		wantDockerfiles map[string]int
+		wantCompose     map[string]int
+	}{
+		{name: "a Dockerfile with no compose file is a project", files: []string{"tool/Dockerfile"}, wantDockerfiles: map[string]int{"tool": 1}},
+		{name: "a Containerfile counts", files: []string{"tool/Containerfile"}, wantDockerfiles: map[string]int{"tool": 1}},
+		{name: "a compose folder's Dockerfile is left to compose", files: []string{"app/Dockerfile", "app/compose.yml"}, wantCompose: map[string]int{"app": 1}},
+		{name: "other files aren't Dockerfiles", files: []string{"tool/Dockerfile.md", "tool/notes.txt"}},
+		{name: "ignored folders stay ignored", files: []string{"node_modules/x/Dockerfile"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			write(t, root, tt.files...)
+			projects, err := Scan(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			gotDockerfiles, gotCompose := map[string]int{}, map[string]int{}
+			for _, p := range projects {
+				if len(p.Dockerfiles) > 0 {
+					gotDockerfiles[p.Name] = len(p.Dockerfiles)
+				}
+				if len(p.ComposeFiles) > 0 {
+					gotCompose[p.Name] = len(p.ComposeFiles)
+				}
+			}
+			if fmt.Sprint(gotDockerfiles) != fmt.Sprint(mapOrEmpty(tt.wantDockerfiles)) {
+				t.Errorf("Dockerfiles = %v, want %v", gotDockerfiles, tt.wantDockerfiles)
+			}
+			if fmt.Sprint(gotCompose) != fmt.Sprint(mapOrEmpty(tt.wantCompose)) {
+				t.Errorf("ComposeFiles = %v, want %v", gotCompose, tt.wantCompose)
+			}
+		})
+	}
+}
+
+func mapOrEmpty(m map[string]int) map[string]int {
+	if m == nil {
+		return map[string]int{}
+	}
+	return m
 }

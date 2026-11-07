@@ -72,11 +72,19 @@ func runningLabel(r models.ImageInfo) string {
 			return fmt.Sprintf("exited (%d)", *r.ExitCode)
 		}
 		return "exited"
-	case "running", "":
+	case "running":
 		if r.RunningVersion == "" {
-			return "not running"
+			return "running"
 		}
 		return ""
+	case "":
+		switch {
+		case r.RunningVersion != "":
+			return ""
+		case r.Dockerfile != "" && r.Image.Service == "":
+			return "not a service"
+		}
+		return "not running"
 	}
 	return r.ContainerState
 }
@@ -177,6 +185,22 @@ func countTagMismatches(results []models.ImageInfo) int {
 		}
 	}
 	return count
+}
+
+// baseImageText explains that a row is a Dockerfile's base image, and what upgrading
+// takes: pulling won't help a locally built image.
+func baseImageText(r models.ImageInfo) string {
+	if r.Dockerfile == "" {
+		return ""
+	}
+	text := "base image, from " + r.Dockerfile
+	if r.LocalImage != "" {
+		text = "base image of " + r.LocalImage + ", from " + r.Dockerfile
+	}
+	if r.NewerBuildAvailable || ClassifyImage(r) == StatusUpgrade {
+		text += "; rebuild from the newer base to upgrade"
+	}
+	return text
 }
 
 // sameTag treats 2.8.11 and v2.8.11 as the same version.
@@ -326,6 +350,10 @@ func writeImageDetails(sb *strings.Builder, results []models.ImageInfo) {
 
 		if r.NewerMajorVersion != "" {
 			sb.WriteString(fmt.Sprintf("      💥 Newer major: %s\n", r.NewerMajorVersion))
+		}
+
+		if base := baseImageText(r); base != "" {
+			sb.WriteString(fmt.Sprintf("      🏗️  %s\n", base))
 		}
 
 		if build := newerBuildText(r); build != "" {

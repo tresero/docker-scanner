@@ -12,6 +12,7 @@ import (
 // grouping them by project directory
 func Scan(rootDir string) ([]models.Project, error) {
 	projectMap := make(map[string]*models.Project)
+	dockerfiles := make(map[string][]string)
 
 	err := filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -25,11 +26,17 @@ func Scan(rootDir string) ([]models.Project, error) {
 			return nil
 		}
 
+		projectDir := filepath.Dir(path)
+
+		if isDockerfile(info.Name()) {
+			dockerfiles[projectDir] = append(dockerfiles[projectDir], path)
+			return nil
+		}
+
 		if !isComposeFile(info.Name()) {
 			return nil
 		}
 
-		projectDir := filepath.Dir(path)
 		projectName := filepath.Base(projectDir)
 
 		if project, exists := projectMap[projectDir]; exists {
@@ -49,6 +56,13 @@ func Scan(rootDir string) ([]models.Project, error) {
 		return nil, err
 	}
 
+	// A compose file decides how its own folder's Dockerfile is used.
+	for dir, paths := range dockerfiles {
+		if _, hasCompose := projectMap[dir]; !hasCompose {
+			projectMap[dir] = &models.Project{Name: filepath.Base(dir), Path: dir, Dockerfiles: paths}
+		}
+	}
+
 	projects := make([]models.Project, 0, len(projectMap))
 	for _, p := range projectMap {
 		projects = append(projects, *p)
@@ -60,6 +74,16 @@ func Scan(rootDir string) ([]models.Project, error) {
 func isComposeFile(name string) bool {
 	lower := strings.ToLower(name)
 	for _, valid := range config.ComposeFileNames {
+		if lower == valid {
+			return true
+		}
+	}
+	return false
+}
+
+func isDockerfile(name string) bool {
+	lower := strings.ToLower(name)
+	for _, valid := range config.DockerfileNames {
 		if lower == valid {
 			return true
 		}
