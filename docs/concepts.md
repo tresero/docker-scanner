@@ -53,7 +53,7 @@ If every tag with a known date is too new, the scanner recommends nothing and th
 
 ## How a recommendation is chosen
 
-The scanner considers every usable tag from the registry response, and shows the newest 10 as available versions. How far it can move depends on what you pinned:
+The scanner considers every usable tag it reads, and shows the newest 10 as available versions. On Docker Hub it reads the most recently pushed version tags, plus up to 3 pages of tags matching your pin's major or variant, so a very busy image can still have older tags it doesn't see. How far it can move depends on what you pinned:
 
 | Pin | Recommendation |
 | --- | --- |

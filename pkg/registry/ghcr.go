@@ -77,7 +77,7 @@ func (r *GHCRRegistry) FetchVersions(image models.Image) ([]models.RegistryVersi
 	// of total tag count. GHCR returns oldest-first and many lscr.io
 	// images have thousands of tags, making pagination impractical.
 	if image.Registry == "lscr.io" {
-		return fetchDockerHubMirror(image.Name)
+		return fetchDockerHubMirror(image.Name, image.Tag)
 	}
 
 	// lscr.io is a redirect to ghcr.io, so always query ghcr.io
@@ -120,27 +120,14 @@ func fillReleaseDates(versions []models.RegistryVersion, currentTag string, fetc
 	}
 }
 
-// fetchDockerHubMirror gets tags from Docker Hub for lscr.io images.
-// Docker Hub returns tags ordered by last_updated (newest first), so we
-// always get current versions regardless of total tag count.
-func fetchDockerHubMirror(imageName string) ([]models.RegistryVersion, error) {
-	// lscr.io images use the format "linuxserver/<app>" on both registries
-	dockerHubName := imageName
-	hubURL := fmt.Sprintf(
-		"https://registry.hub.docker.com/v2/repositories/%s/tags/?page_size=100&ordering=last_updated",
-		dockerHubName,
-	)
-	hubBody, err := httpGet(hubURL)
+// fetchDockerHubMirror gets tags from Docker Hub for lscr.io images, which use
+// the format "linuxserver/<app>" on both registries.
+func fetchDockerHubMirror(imageName, currentTag string) ([]models.RegistryVersion, error) {
+	tags, err := fetchHubTags(httpGet, imageName, currentTag)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query Docker Hub for %s: %w", dockerHubName, err)
+		return nil, fmt.Errorf("failed to query Docker Hub for %s: %w", imageName, err)
 	}
-
-	var result dockerHubResponse
-	if err := json.Unmarshal(hubBody, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse Docker Hub response: %w", err)
-	}
-
-	return FilterAndSortDockerHubTags(result.Results), nil
+	return FilterAndSortDockerHubTags(tags), nil
 }
 
 // pickAmd64ManifestDigest parses a manifest list and returns the digest of

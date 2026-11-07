@@ -47,7 +47,7 @@ These rules live in separate places, so a change to what counts as a version may
 - `Lookup` uses the first handler whose `Supports` matches. `GenericRegistry` matches everything, so it must stay last in `DefaultRegistries()`.
 - `GHCRRegistry` also claims `lscr.io`, but fetches those images from the Docker Hub mirror for newest-first ordering.
 - GHCR lists tags oldest-first, capped at 1000 per page, so it jumps to the image's current tag to find newer ones. Each date costs 3 requests (manifest list → platform manifest → config blob), so `fillReleaseDates` dates at most 10 tags that fit the pin.
-- Docker Hub lookups read only the 100 most recently updated tags, so an older line on a busy image can be missing.
+- Docker Hub lookups (`fetchHubTags`) read the first page of `name=.`, plus up to 3 pages of the pin's own filter when that isn't the full list. An older line on a very busy image can still be missing.
 - `GenericRegistry` returns no dates, so its results always go through `positionFallback`.
 
 ### Overrides
