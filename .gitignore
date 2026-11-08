@@ -31,3 +31,6 @@ go.work.sum
 # .idea/
 # .vscode/
 docker-scanner-*
+
+# Local build output (go build -o docker-scanner .)
+/docker-scanner
