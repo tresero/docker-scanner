@@ -6,7 +6,7 @@
 - **Security notices:** new Ubuntu Security Notices (USNs) for installed packages, and older ones that are still not installed.
 - **CVE watchlist:** each CVE in `cve-watchlist`, checked against Ubuntu's CVE feed and the installed version. FIX INSTALLED means Ubuntu names a fixed version (status `pending`, no USN yet) and that version is installed.
 - **Kernel:** the running kernel compared with the newest installed one (is a reboot needed?), and Livepatch status.
-- **Docker images:** a table from docker-scanner's JSON report with Status, App, Image, Running, Set tag to and Notes.
+- **Docker images:** a table from docker-scanner's JSON report with Status, App, Image, Running, Set tag to and Notes. Each security issue is listed once: on its service, or on a row of its own for an issue about the whole compose file, such as a missing `.env`.
 
 The subject line starts with ATTENTION, WORTH A LOOK or ALL CLEAR. The email has a plain-text part and an HTML part.
 
