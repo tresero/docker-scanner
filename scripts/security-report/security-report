@@ -548,7 +548,7 @@ section_docker() {
 
     local -a rows=() okn=()
     local proj svc ref tag running rec age note status nb nbd rbd state health code major nmaj data mism mdown unver sec file dfile
-    local name label ver set notes d k upg
+    local name label ver set notes d k upg ctr okrun=yes
     while IFS=$US read -r proj svc ref tag running rec age note status nb nbd rbd state health code major nmaj data mism mdown unver sec file dfile; do
         ref=${ref#docker.io/}; ref=${ref#library/}
         name=$proj; [ "$svc" != "$proj" ] && name="$proj / $svc"
@@ -625,7 +625,16 @@ section_docker() {
         elif [ -n "$nmaj" ]; then
             label="NEW MAJOR" notes="$nmaj is out. Staying on $tag is fine; moving is a major upgrade, so read the breaking changes first.${data:+ $data}"
         fi
-        if [ "$label" = OK ]; then okn+=("$name $ver"); else rows+=("R$US$label$US$name$US$ref$US$ver$US$set$US$notes"); fi
+        # Container column: is it running, whatever the row's status
+        ctr=${state:-unknown}
+        [ -n "$health" ] && ctr+=", $health"
+        [ "$state" = exited ] && [ -n "$code" ] && ctr+=" (code $code)"
+        if [ "$label" = OK ]; then
+            # OK rows are running, or the scanner gave no state
+            if [ "$state" = running ]; then okn+=("$name $ver"); else okn+=("$name $ver (container state unknown)") okrun=""; fi
+        else
+            rows+=("R$US$label$US$name$US$ctr$US$ref$US$ver$US$set$US$notes")
+        fi
     done < <(jq -r '.images | sort_by(.image.project, .image.service) | .[] | .image.service as $svc | [
             .image.project // "", .image.service // "",
             ((.image.registry // "") + "/" + (.image.name // "")), .image.tag // "",
@@ -653,7 +662,7 @@ section_docker() {
         [ -n "$fsec" ] || continue
         if [ -n "$svc" ]; then name="$proj / $svc" where="Docker $proj / $svc ($file)"
         else name="$proj (whole file)" where="Docker $proj: in $file"; fi
-        rows+=("R${US}SECURITY$US$name$US$US${US}no change$US$fsec")
+        rows+=("R${US}SECURITY$US$name$US$US$US${US}no change$US$fsec")
         N_DOCKER_BAD=$((N_DOCKER_BAD + 1))
         add_action bad "$where: security issue: $fsec" ""
     done < <(jq -r '(.images | map({f: .file, s: .image.service})) as $rows
@@ -669,12 +678,12 @@ section_docker() {
     local total
     total=$(jq '.images | length' "$TMP/docker.json")
     if [ ${#rows[@]} -gt 0 ]; then
-        table_start '    %-17s %-22s %-34s %-15s %-30s %s' "Status|App|Image|Running|Set tag to|Notes"
+        table_start '    %-17s %-22s %-18s %-34s %-15s %-30s %s' "Status|App|Container|Image|Running|Set tag to|Notes"
         emit_records "${rows[@]}"
         table_end
-        [ ${#okn[@]} -gt 0 ] && para "Up to date, no change: $(joinc "${okn[@]}")."
+        [ ${#okn[@]} -gt 0 ] && para "Up to date${okrun:+ and running}, no change: $(joinc "${okn[@]}")."
     else
-        para "All $total images are up to date, no change: $(joinc "${okn[@]}")."
+        para "All $total images are up to date${okrun:+ and running}, no change: $(joinc "${okn[@]}")."
     fi
 
     # One action per compose project, since one pull and up -d covers its services
