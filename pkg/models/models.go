@@ -55,6 +55,7 @@ type SecurityIssue struct {
 	Description string `json:"description"`
 	Location    string `json:"location"`              // e.g., "CLOUDFLARE_API_TOKEN"
 	Suggestion  string `json:"suggestion,omitempty"`
+	Service     string `json:"service,omitempty"`     // The compose service it's about; empty when it's about the whole file
 }
 
 // Project represents a docker project directory
