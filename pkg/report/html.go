@@ -135,18 +135,7 @@ func GenerateHTML(results []models.ImageInfo) string {
 		"tagMismatchText":  tagMismatchText,
 		"baseImageText":    baseImageText,
 		"imageStatus": func(r models.ImageInfo) string {
-			switch ClassifyImage(r) {
-			case StatusFloating:
-				return "floating"
-			case StatusUpgrade:
-				return "upgrade"
-			case StatusDowngrade:
-				return "downgrade"
-			case StatusUnverified:
-				return "unverified"
-			default:
-				return "good"
-			}
+			return ClassifyImage(r).String()
 		},
 	}
 
