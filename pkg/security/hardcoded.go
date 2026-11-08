@@ -42,6 +42,11 @@ func checkEntry(entry string, serviceName string, filePath string) []models.Secu
 	return nil
     }
 
+    // Skip on/off switches such as socket-proxy's AUTH=0: no secret is one of these
+    if _, value, ok := strings.Cut(entry, "="); ok && isSwitchValue(value) {
+	return nil
+    }
+
     // Check against all secret patterns; report only the first match per entry
     // to avoid duplicates when a variable name matches multiple patterns
     // (e.g. AUTH_TOKEN matches both "api_token" and "credential").
@@ -63,6 +68,16 @@ func checkEntry(entry string, serviceName string, filePath string) []models.Secu
     }
 
     return issues
+}
+
+// isSwitchValue reports whether a value can only be an on/off setting. Short
+// numbers other than 0 and 1 are left alone, because 1234 can be a real password.
+func isSwitchValue(value string) bool {
+    switch strings.ToLower(strings.Trim(strings.TrimSpace(value), `"'`)) {
+    case "0", "1", "true", "false", "yes", "no", "on", "off":
+	return true
+    }
+    return false
 }
 
 func extractVarName(entry string) string {

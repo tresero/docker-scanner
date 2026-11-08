@@ -245,3 +245,32 @@ services:
 	t.Errorf("expected at least 2 issues, got %d", len(issues))
     }
 }
+// TestHardcodedSecrets_SwitchValues comes from a real scan: linuxserver's
+// socket-proxy turns API sections on and off with AUTH=0, which was reported
+// as a hardcoded credential.
+func TestHardcodedSecrets_SwitchValues(t *testing.T) {
+    tests := []struct {
+	name  string
+	env   string
+	wantN int
+    }{
+	{name: "AUTH=0 is a switch, not a credential", env: "      - AUTH=0", wantN: 0},
+	{name: "AUTH=1 is a switch, not a credential", env: "      - AUTH=1", wantN: 0},
+	{name: "a map entry set to false is a switch", env: "      DISABLE_AUTH: false", wantN: 0},
+	{name: "a switch word in any case is a switch", env: "      - TOKEN=Yes", wantN: 0},
+	{name: "a real credential is still reported", env: "      - AUTH=hunter2", wantN: 1},
+	{name: "a numeric password is still reported", env: "      - DB_PASS=1234", wantN: 1},
+    }
+    for _, tt := range tests {
+	t.Run(tt.name, func(t *testing.T) {
+	    path := writeTestCompose(t, t.TempDir(), "services:\n  app:\n    image: myapp:1.0\n    environment:\n"+tt.env+"\n")
+	    issues, err := (&HardcodedSecretsChecker{}).Check(path)
+	    if err != nil {
+		t.Fatal(err)
+	    }
+	    if len(issues) != tt.wantN {
+		t.Errorf("got %d issues, want %d: %v", len(issues), tt.wantN, issues)
+	    }
+	})
+    }
+}
