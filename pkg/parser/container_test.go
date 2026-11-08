@@ -20,6 +20,13 @@ const (
 	stateDead       = `{"Status":"dead","Running":false,"Dead":true,"ExitCode":255}`
 )
 
+// unrelatedID and unrelatedName are a container from another project that the
+// fake always has. Like Docker, the fake's inspect also answers a prefix of its ID.
+const (
+	unrelatedID   = "a1b2c3d4e5f6"
+	unrelatedName = "chhoto"
+)
+
 // fakeContainers answers inspect by container name and ps with labelled, the
 // container IDs matching the compose labels. noDaemon makes every command fail.
 func fakeContainers(t *testing.T, states map[string]string, labelled string, noDaemon bool) *[]string {
@@ -34,10 +41,18 @@ func fakeContainers(t *testing.T, states map[string]string, labelled string, noD
 		}
 		switch args[0] {
 		case "inspect":
-			if state, ok := states[args[len(args)-1]]; ok {
-				return []byte(state + "\n"), nil
+			name := args[len(args)-1]
+			state, ok := states[name]
+			if !ok && strings.HasPrefix(unrelatedID, name) {
+				name, state, ok = unrelatedName, stateHealthy, true
 			}
-			return nil, errors.New("Error: No such object")
+			if !ok {
+				return nil, errors.New("Error: No such object")
+			}
+			if strings.Contains(strings.Join(args, " "), "{{.Name}}") {
+				state = "/" + name + " " + state
+			}
+			return []byte(state + "\n"), nil
 		case "ps":
 			return []byte(labelled), nil
 		}
@@ -109,6 +124,28 @@ func deref(i *int) any {
 		return nil
 	}
 	return *i
+}
+
+// TestFindContainer_NameMatchesOnlyThatName comes from a real scan: service a
+// had no container, and docker inspect a found chhoto, whose ID starts with a.
+func TestFindContainer_NameMatchesOnlyThatName(t *testing.T) {
+	tests := []struct {
+		name          string
+		containerName string
+		service       string
+	}{
+		{name: "a bare service name that is a prefix of another container's ID", service: "a"},
+		{name: "a container_name that is a prefix of another container's ID", containerName: "a1b2", service: "web"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fakeContainers(t, nil, "", false)
+			got := FindContainer(tt.containerName, "app", tt.service, "/srv/stacks/app/compose.yml")
+			if got.Name != "" || got.State != StateNotCreated {
+				t.Errorf("got %q in state %q, want no container (%q)", got.Name, got.State, StateNotCreated)
+			}
+		})
+	}
 }
 
 func TestFindContainer_LabelLookupUsesTheComposeFolder(t *testing.T) {

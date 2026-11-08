@@ -40,19 +40,19 @@ func FindContainer(containerName, project, service, composeFile string) Containe
 	if first == "" {
 		first = project + "-" + service + "-1"
 	}
-	if status, ok := inspectContainer(first); ok {
+	if status, ok := inspectContainer(first, true); ok {
 		return status
 	}
 
 	labelled, daemonAnswered := containerByLabels(service, composeFile)
 	if labelled != "" {
-		if status, ok := inspectContainer(labelled); ok {
+		if status, ok := inspectContainer(labelled, false); ok {
 			return status
 		}
 	}
 
 	if containerName == "" {
-		if status, ok := inspectContainer(service); ok {
+		if status, ok := inspectContainer(service, true); ok {
 			return status
 		}
 	}
@@ -63,13 +63,21 @@ func FindContainer(containerName, project, service, composeFile string) Containe
 	return ContainerStatus{State: StateNotCreated}
 }
 
-func inspectContainer(name string) (ContainerStatus, bool) {
-	out, err := dockerOutput("inspect", "--format", "{{json .State}}", name)
+// inspectContainer reads a container's state. docker inspect also answers a
+// prefix of a container's ID, so with byName set, an answer from a container
+// with a different name is ignored: otherwise service "a" finds whichever
+// container's ID starts with "a". IDs from containerByLabels pass byName false.
+func inspectContainer(name string, byName bool) (ContainerStatus, bool) {
+	out, err := dockerOutput("inspect", "--type", "container", "--format", "{{.Name}} {{json .State}}", name)
 	if err != nil {
 		return ContainerStatus{}, false
 	}
+	found, stateJSON, _ := strings.Cut(strings.TrimSpace(string(out)), " ")
+	if byName && strings.TrimPrefix(found, "/") != name {
+		return ContainerStatus{}, false
+	}
 	var state dockerState
-	if err := json.Unmarshal(out, &state); err != nil {
+	if err := json.Unmarshal([]byte(stateJSON), &state); err != nil {
 		return ContainerStatus{}, false
 	}
 
