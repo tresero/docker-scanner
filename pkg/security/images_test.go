@@ -2,6 +2,7 @@ package security
 
 import (
 	"docker-scanner/pkg/models"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -76,6 +77,84 @@ func TestCheckImages_EachIssueOnce(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("issues by service = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// failingChecker always errors, so RunAll reports a check_error.
+type failingChecker struct{}
+
+func (failingChecker) Name() string { return "failing_check" }
+func (failingChecker) Check(string) ([]models.SecurityIssue, error) {
+	return nil, errors.New("boom")
+}
+
+// TestCheckImages_MarksFileWideIssues checks that an issue sitting on one
+// service's image says whether it's about that service or the whole file, so a
+// report doesn't pin a file-wide problem on whichever service carries it.
+func TestCheckImages_MarksFileWideIssues(t *testing.T) {
+	tests := []struct {
+		name        string
+		compose     string
+		checkers    []Checker
+		rows        []string
+		wantService string // the issue's service field; empty means the whole file
+		wantFile    bool   // location is exactly the compose file
+	}{
+		{
+			name:     "a missing .env names the compose file and no service",
+			compose:  "services:\n  web:\n    image: nginx:1.27.3\n    environment:\n      - HOST=${HOST}\n",
+			checkers: []Checker{&EnvFileChecker{}},
+			rows:     []string{"web"},
+			wantFile: true,
+		},
+		{
+			name:     "a check that fails names the compose file and no service",
+			compose:  "services:\n  web:\n    image: nginx:1.27.3\n",
+			checkers: []Checker{failingChecker{}},
+			rows:     []string{"web"},
+			wantFile: true,
+		},
+		{
+			name:        "a secret names its service",
+			compose:     "services:\n  web:\n    image: nginx:1.27.3\n  db:\n    image: postgres:16.14\n    environment:\n      - POSTGRES_PASSWORD=hunter2\n",
+			checkers:    []Checker{&HardcodedSecretsChecker{}},
+			rows:        []string{"web", "db"},
+			wantService: "db",
+		},
+		{
+			name:        "a secret in a service with no row still names that service",
+			compose:     "services:\n  web:\n    image: nginx:1.27.3\n  helper:\n    environment:\n      - DB_PASSWORD=hunter2\n",
+			checkers:    []Checker{&HardcodedSecretsChecker{}},
+			rows:        []string{"web"},
+			wantService: "helper",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeTestCompose(t, t.TempDir(), tt.compose)
+			var images []models.ImageInfo
+			for _, service := range tt.rows {
+				images = append(images, models.ImageInfo{File: path, Image: models.Image{Service: service}})
+			}
+
+			CheckImages(tt.checkers, images)
+
+			var issues []models.SecurityIssue
+			for _, image := range images {
+				issues = append(issues, image.SecurityIssues...)
+			}
+			if len(issues) != 1 {
+				t.Fatalf("got %d issues, want 1: %v", len(issues), issues)
+			}
+			issue := issues[0]
+			if issue.Service != tt.wantService {
+				t.Errorf("service = %q, want %q", issue.Service, tt.wantService)
+			}
+			if gotFile := issue.Location == path; gotFile != tt.wantFile {
+				t.Errorf("location = %q, want the compose file %q: %v", issue.Location, path, tt.wantFile)
 			}
 		})
 	}

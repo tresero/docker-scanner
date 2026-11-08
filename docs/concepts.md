@@ -176,7 +176,7 @@ For registries marked "Fallback" (no manifest date support), the optional [overr
 - Credentials embedded in URLs (`://user:pass@host`)
 - Missing `.env` files when environment variables use `${VAR}` syntax
 
-Each issue is reported once, on the service it's about. In JSON, that's the image's `security_issues`, and the issue's `service` names it. An issue about the whole compose file, such as a missing `.env`, has no `service` and goes on the file's first service by name. So does an issue in a service with no image row. `security_count` is the total of all images' `security_issues`, so there are never issues that aren't attached to an image.
+Each issue is reported once, on the service it's about. In JSON, that's the image's `security_issues`, and the issue's `service` names it. An issue about the whole compose file, such as a missing `.env` or a check that failed, has no `service`, and its `location` is the compose file itself. It goes on the file's first service by name, but it isn't about that service, so a report should show it against the file. An issue in a service with no image row goes there too, and its `service` still names the service it's about. `security_count` is the total of all images' `security_issues`, so there are never issues that aren't attached to an image.
 
 ## Report symbols
 
