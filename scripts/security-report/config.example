@@ -1,0 +1,10 @@
+# Settings for /usr/local/sbin/security-report. Install as /etc/security-report/config.
+# Every variable is optional; the defaults are shown.
+MAILTO=root
+MAILFROM=root
+#WATCHLIST=/etc/security-report/cve-watchlist
+#STATE=/var/lib/security-report
+# docker-scanner's .env (SCANNER, SCAN_DIR, SAFE_DAYS). Set it empty to leave out the Docker section.
+#DOCKER_SCANNER_ENV=/root/docker-scanner/.env
+#MAX_LIST_LAG_HOURS=24
+#UBUNTU_ARCHIVE=http://archive.ubuntu.com/ubuntu

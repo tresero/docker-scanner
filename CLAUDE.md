@@ -17,7 +17,7 @@ go run . -dir <path> -verbose          # Real scan against live registries
 - With no flags the binary prints help. Scan the current directory with `-dir .`.
 - `-version` prints `main.version`, which release builds set with `-ldflags -X main.version=<tag>` (see `docs/architecture.md`). Other builds print `dev`.
 - Tests make no registry or GitHub calls, so confirm changes to live fetching with a real scan.
-- The `docker-scanner` binary and `dist/checksums.txt` are tracked in git, and the build command overwrites the binary. Stage source files by name when committing.
+- The build output `docker-scanner` is gitignored. `dist/checksums.txt` is tracked and holds the latest release's checksums; update it with each release.
 - `registry.go`, `checker.go`, and some other files are space-indented. Keep reformatting out of unrelated diffs.
 
 ## Architecture
@@ -80,4 +80,4 @@ These rules live in separate places, so a change to what counts as a version may
 - `docs/concepts.md`: read when changing tag rules, registry support, security checks, or report symbols, and keep it in sync.
 - `docs/overrides.md`: read when changing the override YAML schema or sources.
 - `docs/architecture.md`: read when adding a registry, checker, or output format, or cutting a release. The interfaces in code are authoritative.
-- `docs/automation.md`: read when changing the cron and email setup. It names the script `docker-scan-email.sh`; the repo's copy is `docker-scan-report.sh`.
+- `docs/automation.md`: read when changing `scripts/security-report/`. That script reads the JSON report with `jq`, so a JSON change can break it.

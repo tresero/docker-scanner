@@ -1,0 +1,779 @@
+#!/bin/bash
+# Daily security report for this host. It starts with what to do, then covers
+# pending updates, new Ubuntu Security Notices that touch installed packages, a
+# CVE watchlist, kernel and Livepatch state, and Docker images (checked with
+# docker-scanner). Mailed as text plus HTML through the local Postfix relay.
+# Run by security-report.timer.
+#
+# Usage: security-report [--stdout | --html]
+#   --stdout  print the text report instead of mailing it; saved state is not updated
+#   --html    print the HTML report instead of mailing it; saved state is not updated
+set -uo pipefail
+
+CONF=/etc/security-report/config
+[ -r "$CONF" ] && . "$CONF"
+MAILTO=${MAILTO:-root}
+MAILFROM=${MAILFROM:-root}
+WATCHLIST=${WATCHLIST:-/etc/security-report/cve-watchlist}
+STATE=${STATE:-/var/lib/security-report}
+# docker-scanner's settings file (SCANNER, SCAN_DIR, SAFE_DAYS). Set
+# DOCKER_SCANNER_ENV= (empty) in the config to leave the Docker section out.
+DOCKER_SCANNER_ENV=${DOCKER_SCANNER_ENV-/root/docker-scanner/.env}
+API=https://ubuntu.com/security
+RELEASE=$(. /etc/os-release; echo "$VERSION_CODENAME")
+HOST=$(hostname -s)
+TODAY=$(date +%F)
+
+MODE=mail
+case ${1:-} in
+    "") ;;
+    --stdout) MODE=text ;;
+    --html) MODE=html ;;
+    *) echo "Usage: $0 [--stdout | --html]" >&2; exit 2 ;;
+esac
+
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+mkdir -p "$STATE"
+NEWSTATE=$TMP/state
+mkdir -p "$NEWSTATE"
+
+fetch() { curl -fsS -m 30 --retry 2 -o "$2" "$1" 2>>"$TMP/errors"; }
+
+US=$'\x1f'   # field separator for records; unlike a tab, empty fields survive read
+
+# Summary counters, used in the subject line and the top of the report
+N_SEC=0 N_SEC_NEW=0 N_OTHER=0 N_USN=0 N_USN_ACTION=0 LISTS_BEHIND=0 REBOOT=no
+N_WATCH_CHANGED=0 N_WATCH_UNPATCHED=0 N_WATCH_AWAITING=0
+N_DOCKER_BAD=0 N_DOCKER_UPG=0 N_DOCKER_BUILD=0 N_DOCKER_OTHER=0
+ERRORS=()
+ACTIONS=()   # "kind<US>text<US>command", listed under WHAT TO DO
+# Warn when this host's Ubuntu package lists are this far behind Ubuntu's own
+MAX_LIST_LAG_HOURS=${MAX_LIST_LAG_HOURS:-24}
+UBUNTU_ARCHIVE=${UBUNTU_ARCHIVE:-http://archive.ubuntu.com/ubuntu}
+APT_TEXT="Install the pending updates. Take a Hetzner snapshot first, or at least check that last night's restic backup ran."
+APT_CMD="apt update && apt full-upgrade"
+
+# Installed binary packages, their source packages, and source package versions
+declare -A INST SRCVER SRC_OF UPG
+while IFS=$'\t' read -r st pkg ver src srcver; do
+    [ "${st:0:2}" = "ii" ] || continue
+    INST[$pkg]=$ver
+    src=${src%% *}
+    SRC_OF[$pkg]=$src
+    if [ -z "${SRCVER[$src]:-}" ] || dpkg --compare-versions "$srcver" gt "${SRCVER[$src]}"; then
+        SRCVER[$src]=$srcver
+    fi
+done < <(dpkg-query -W -f='${db:Status-Abbrev}\t${Package}\t${Version}\t${source:Package}\t${source:Version}\n')
+# For the kernel, what matters is the running version, not the newest installed
+NEWEST_KERNEL=${SRCVER[linux]:-}
+RUNNING_KERNEL=$(awk '{print $2}' /proc/version_signature 2>/dev/null)
+RUNNING_KERNEL=${RUNNING_KERNEL%-*}
+[ -n "$RUNNING_KERNEL" ] && SRCVER[linux]=$RUNNING_KERNEL
+
+# --- Output ---------------------------------------------------------------------
+# Every section writes the text report and the HTML report side by side. Styles
+# are inline because many mail clients strip <style> blocks.
+TXT=$TMP/sections.txt
+HTM=$TMP/sections.html
+: >"$TXT"
+: >"$HTM"
+declare -A BG=([ok]="#dafbe1" [warn]="#fff8c5" [bad]="#ffebe9" [info]="#f6f8fa")
+declare -A FG=([ok]="#1a7f37" [warn]="#9a6700" [bad]="#cf222e" [info]="#57606a")
+S_FONT="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1f2328;"
+S_TABLE="border-collapse:collapse;width:100%;margin-bottom:12px;font-size:14px;"
+S_TH="background:#f6f8fa;border:1px solid #d0d7de;padding:6px 10px;text-align:left;font-weight:600;"
+S_TD="border:1px solid #d0d7de;padding:6px 10px;vertical-align:top;"
+S_H2="font-size:18px;font-weight:600;margin:24px 0 8px;color:#24292f;"
+S_CODE="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:Menlo,Consolas,monospace;font-size:13px;"
+
+T() { printf '%s\n' "$*" >>"$TXT"; }
+H() { printf '%s\n' "$*" >>"$HTM"; }
+esc() {
+    local s=$*
+    # Quoted replacements: bash 5.2 would otherwise read & as "the match"
+    s=${s//'&'/'&amp;'}; s=${s//'<'/'&lt;'}; s=${s//'>'/'&gt;'}; s=${s//'"'/'&quot;'}
+    printf '%s' "$s"
+}
+kind_of() {   # status label -> ok, warn, bad or info (row color)
+    case $1 in
+        PATCHED|"NOT AFFECTED"|"UP TO DATE"|"NOT NEEDED"|CURRENT|OK|"ALL CLEAR") echo ok ;;
+        "FIX INSTALLED"|"NEEDS REVIEW"|DEFERRED|IGNORED|AVAILABLE|"NOT RUNNING"|"NOT VERIFIED"|UPGRADE|"NEWER BUILD"|"FLOATING TAG"|"TAG MISMATCH"|"WORTH A LOOK") echo warn ;;
+        VULNERABLE|"UPDATE NEEDED"|"REBOOT NEEDED"|"OUT OF DATE"|SECURITY|"CONTAINER PROBLEM"|ATTENTION|ERROR) echo bad ;;
+        *) echo info ;;
+    esac
+}
+section() { T ""; T "${1^^}"; H "<h2 style=\"$S_H2\">$(esc "$1")</h2>"; }
+para() { T "  $1"; H "<p style=\"margin:4px 0 12px;font-size:14px;\">$(esc "$1")</p>"; }
+table_start() {   # TEXT_FORMAT "Heading|Heading|..."; the first column is always the status
+    TFMT=$1
+    local -a cols
+    local c h="<table style=\"$S_TABLE\"><tr>"
+    IFS='|' read -ra cols <<<"$2"
+    TCOLS=${#cols[@]}
+    for c in "${cols[@]}"; do h+="<th style=\"$S_TH\">$(esc "$c")</th>"; done
+    H "$h</tr>"
+}
+row() {   # LABEL CELL...
+    local label=$1 k c
+    local -a cells=("${@:2}")
+    while [ $((${#cells[@]} + 1)) -lt "$TCOLS" ]; do cells+=(""); done
+    k=$(kind_of "$label")
+    # shellcheck disable=SC2059   # the format is the table's own
+    T "$(printf "$TFMT" "$label" "${cells[@]}" | sed 's/ *$//')"
+    H "<tr style=\"background:${BG[$k]};\">"
+    H "<td style=\"$S_TD\"><span style=\"color:${FG[$k]};font-weight:600;white-space:nowrap;\">$(esc "$label")</span></td>"
+    for c in "${cells[@]}"; do H "<td style=\"$S_TD\">$(esc "$c")</td>"; done
+    H "</tr>"
+}
+group_row() { T "  $1"; H "<tr><td colspan=\"$TCOLS\" style=\"${S_TD}background:#ffffff;\"><b>$(esc "$1")</b></td></tr>"; }
+table_end() { H "</table>"; }
+emit_records() {   # records: G<US>heading, or R<US>label<US>cell...
+    local r
+    local -a f
+    for r in "$@"; do
+        IFS=$US read -ra f <<<"$r"
+        if [ "${f[0]}" = G ]; then group_row "${f[1]}"; else row "${f[@]:1}"; fi
+    done
+}
+add_action() {   # KIND TEXT [COMMAND]; the same action is listed once
+    local e="$1$US$2$US${3:-}" a
+    for a in "${ACTIONS[@]}"; do [ "$a" = "$e" ] && return 0; done
+    ACTIONS+=("$e")
+}
+joinc() { local out="" s; for s in "$@"; do out+="${out:+, }$s"; done; printf '%s' "$out"; }
+
+# --- 1. Pending updates ------------------------------------------------------
+# Compare the local security and updates lists with Ubuntu's own archive. The
+# dates can't be judged by age alone: a pocket can legitimately sit unchanged for
+# a while, and a stale mirror still looks like a successful apt-get update.
+inrelease_epoch() {   # file; prints its Date: as epoch seconds, fails if it has none
+    local d
+    d=$(sed -n 's/^Date: //p' "$1")
+    [ -n "$d" ] && date -d "$d" +%s
+}
+
+check_list_lag() {
+    local pocket f upstream local_date lag found
+    LIST_LAG_DETAIL="" LISTS_UNVERIFIED=0
+    for pocket in "$RELEASE-security" "$RELEASE-updates"; do
+        found=0
+        if fetch "$UBUNTU_ARCHIVE/dists/$pocket/InRelease" "$TMP/upstream-inrelease" &&
+            upstream=$(inrelease_epoch "$TMP/upstream-inrelease"); then
+            for f in /var/lib/apt/lists/*_dists_"$pocket"_InRelease; do
+                [ -r "$f" ] || continue
+                local_date=$(inrelease_epoch "$f") || continue
+                found=1
+                lag=$(((upstream - local_date) / 3600))
+                if [ "$lag" -ge "$MAX_LIST_LAG_HOURS" ]; then
+                    [ "$lag" -gt "$LISTS_BEHIND" ] && LISTS_BEHIND=$lag
+                    f=${f##*/}
+                    LIST_LAG_DETAIL+="${LIST_LAG_DETAIL:+; }$pocket from ${f%%_*} is $lag hours behind Ubuntu"
+                fi
+            done
+        fi
+        if [ "$found" = 0 ]; then
+            LISTS_UNVERIFIED=1
+            ERRORS+=("could not compare $pocket package lists with Ubuntu")
+        fi
+    done
+}
+
+section_updates() {
+    if ! apt-get update -qq >"$TMP/apt-update.log" 2>&1; then
+        ERRORS+=("apt-get update failed: $(tail -1 "$TMP/apt-update.log")")
+    fi
+    check_list_lag
+    # With old lists, "nothing to install" only means nothing the mirror knows about
+    local verified=1
+    { [ "$LISTS_BEHIND" -gt 0 ] || [ "$LISTS_UNVERIFIED" = 1 ]; } && verified=0
+    local prev="$STATE/upgradable" line pkg pockets new old note
+    local -a pkgrows=()
+    touch "$prev"
+    while read -r line; do
+        pkg=${line%%/*}
+        pockets=${line#*/}; pockets=${pockets%% *}
+        new=$(awk '{print $2}' <<<"$line")
+        old=$(sed -n 's/.*\[upgradable from: \(.*\)\]/\1/p' <<<"$line")
+        UPG[$pkg]=$new
+        echo "$pkg $new" >>"$NEWSTATE/upgradable"
+        if [[ $pockets == *-security* ]]; then
+            N_SEC=$((N_SEC + 1))
+            note="security fix"
+            if ! grep -qxF "$pkg $new" "$prev"; then note="security fix, new since last report"; N_SEC_NEW=$((N_SEC_NEW + 1)); fi
+            pkgrows=("R${US}UPDATE NEEDED$US$pkg$US$old → $new$US$note" "${pkgrows[@]}")
+        else
+            N_OTHER=$((N_OTHER + 1))
+            pkgrows+=("R${US}AVAILABLE$US$pkg$US$old → $new${US}not a security fix")
+        fi
+    done < <(apt list --upgradable 2>/dev/null | tail -n +2)
+    touch "$NEWSTATE/upgradable"
+
+    section "Pending updates"
+    table_start '    %-14s %-17s %s' "Status|Check|Detail"
+    if [ "$LISTS_BEHIND" -gt 0 ]; then
+        row "OUT OF DATE" "Package lists" "$LIST_LAG_DETAIL, so newer fixes may not show up here"
+        add_action bad "The package lists are $LISTS_BEHIND hours behind Ubuntu. Check the mirror in /etc/apt/sources.list.d/ubuntu.sources, then update the lists." "apt update"
+    elif [ "$LISTS_UNVERIFIED" = 1 ]; then
+        row "NOT VERIFIED" "Package lists" "could not compare them with Ubuntu's archive"
+    else
+        row "CURRENT" "Package lists" "they match Ubuntu's archive"
+    fi
+    if [ "$N_SEC" -gt 0 ]; then
+        local extra=""
+        [ "$N_SEC_NEW" -gt 0 ] && extra=" ($N_SEC_NEW new since last report)"
+        row "UPDATE NEEDED" "Security updates" "$N_SEC to install$extra"
+    elif [ "$verified" = 1 ]; then row "UP TO DATE" "Security updates" "none pending"
+    else row "NOT VERIFIED" "Security updates" "none pending, but the package lists are not confirmed current"; fi
+    if [ "$N_OTHER" -gt 0 ]; then row "AVAILABLE" "Other updates" "$N_OTHER to install"
+    elif [ "$verified" = 1 ]; then row "UP TO DATE" "Other updates" "none pending"
+    else row "NOT VERIFIED" "Other updates" "none pending, but the package lists are not confirmed current"; fi
+    table_end
+    if [ ${#pkgrows[@]} -gt 0 ]; then
+        table_start '    %-14s %-32s %-44s %s' "Status|Package|Installed → available|Note"
+        emit_records "${pkgrows[@]}"
+        table_end
+    fi
+    if [ "$N_SEC" -gt 0 ]; then add_action bad "$APT_TEXT" "$APT_CMD"
+    elif [ "$N_OTHER" -gt 0 ]; then add_action warn "$APT_TEXT" "$APT_CMD"; fi
+}
+
+# --- 2. New Ubuntu Security Notices affecting installed packages ---------------
+USN_FMT='      %-14s %-28s %-26s %-26s %s'
+USN_COLS="Status|Package|You have|Fixed in|What to do"
+usn_advice() {   # binary package, fixed version
+    local up=${UPG[$1]:-}
+    if [ -n "$up" ] && dpkg --compare-versions "$up" ge "$2"; then
+        echo "apt offers $up: install it (see What to do)"
+    else
+        echo "apt does not offer the fix yet (phased rollout or mirror lag): check again tomorrow"
+    fi
+}
+
+section_usns() {
+    local seen="$STATE/seen-usns" open="$STATE/open-usns" cutoff="" lookback="" stop
+    if [ ! -s "$seen" ]; then
+        cutoff=$(date -d '7 days ago' +%F)   # first run: look back a week
+        : >"$seen"
+    fi
+    # No open list yet: seed it from the last 30 days, so packages still behind a
+    # notice that was already reported get picked up
+    [ -e "$open" ] || lookback=$(date -d '30 days ago' +%F)
+    stop=${lookback:-$cutoff}
+
+    # Notices from earlier reports stay listed until the package catches up
+    local -a earlier=()
+    local earlier_cur="" id pub title pkg fixed have
+    : >"$NEWSTATE/open-usns"
+    add_earlier() {
+        if [ "$id" != "$earlier_cur" ]; then
+            earlier_cur=$id
+            earlier+=("G$US$id ($pub) $title")
+        fi
+        earlier+=("R${US}UPDATE NEEDED$US$pkg$US$have$US$fixed$US$(usn_advice "$pkg" "$fixed")")
+        N_USN_ACTION=$((N_USN_ACTION + 1))
+        printf '%s\t%s\t%s\t%s\t%s\n' "$id" "$pub" "$title" "$pkg" "$fixed" >>"$NEWSTATE/open-usns"
+    }
+    print_earlier() {
+        [ ${#earlier[@]} -gt 0 ] || return 0
+        section "Unpatched notices from earlier reports"
+        table_start "$USN_FMT" "$USN_COLS"
+        emit_records "${earlier[@]}"
+        table_end
+    }
+    if [ -r "$open" ]; then
+        while IFS=$'\t' read -r id pub title pkg fixed; do
+            have=${INST[$pkg]:-}
+            [ -n "$have" ] && dpkg --compare-versions "$have" lt "$fixed" && add_earlier
+        done <"$open"
+    fi
+
+    section "New security notices (affecting installed packages)"
+    # The API caps limit at 20; page back until we reach notices already seen
+    # (or older than the first-run cutoff or seed window), at most 5 pages
+    local page=0 last
+    : >"$TMP/usn-pages"
+    while [ $page -lt 5 ]; do
+        if ! fetch "$API/notices.json?release=$RELEASE&limit=20&offset=$((page * 20))&order=newest" "$TMP/usn-page.json"; then
+            ERRORS+=("could not fetch Ubuntu security notices")
+            para "(could not fetch notices)"
+            [ -n "$lookback" ] && rm -f "$NEWSTATE/open-usns"   # seed again next run
+            print_earlier
+            return
+        fi
+        cat "$TMP/usn-page.json" >>"$TMP/usn-pages"
+        last=$(jq -r '.notices[-1] | "\(.id)\t\(.published[:10])"' "$TMP/usn-page.json")
+        [ "$(jq '.notices | length' "$TMP/usn-page.json")" -lt 20 ] && break
+        [ -z "$lookback" ] && grep -qxF "${last%%$'\t'*}" "$seen" && break
+        [ -n "$stop" ] && [[ ${last#*$'\t'} < $stop ]] && break
+        page=$((page + 1))
+    done
+    jq -s '{notices: (map(.notices) | add)}' "$TMP/usn-pages" >"$TMP/usn.json"
+    cp "$seen" "$NEWSTATE/seen-usns"
+    jq -r '.notices[].id' "$TMP/usn.json" >>"$NEWSTATE/seen-usns"
+    sort -u -o "$NEWSTATE/seen-usns" "$NEWSTATE/seen-usns"
+
+    local -a out=() block=()
+    local cur="" hit=0 past_seen=0
+    flush() {
+        if [ "$hit" = 1 ]; then out+=("${block[@]}"); N_USN=$((N_USN + 1)); fi
+        block=() hit=0
+    }
+    while IFS=$'\t' read -r id pub title pkg fixed; do
+        # Newest first, so while seeding, everything after the first seen notice
+        # predates the seen list and isn't new either
+        if [ -n "$lookback" ] && grep -qxF "$id" "$seen"; then past_seen=1; fi
+        if [ "$past_seen" = 1 ] || grep -qxF "$id" "$seen"; then
+            # Already reported; only relevant while seeding the open list
+            [ -n "$lookback" ] && [[ ! $pub < $lookback ]] || continue
+            have=${INST[$pkg]:-}
+            [ -n "$have" ] && dpkg --compare-versions "$have" lt "$fixed" && add_earlier
+            continue
+        fi
+        [ -n "$cutoff" ] && [[ $pub < $cutoff ]] && continue
+        if [ "$id" != "$cur" ]; then
+            flush; cur=$id
+            block=("G$US$id ($pub) $title")
+        fi
+        have=${INST[$pkg]:-}
+        [ -z "$have" ] && continue
+        hit=1
+        if dpkg --compare-versions "$have" lt "$fixed"; then
+            N_USN_ACTION=$((N_USN_ACTION + 1))
+            printf '%s\t%s\t%s\t%s\t%s\n' "$id" "$pub" "$title" "$pkg" "$fixed" >>"$NEWSTATE/open-usns"
+            block+=("R${US}UPDATE NEEDED$US$pkg$US$have$US$fixed$US$(usn_advice "$pkg" "$fixed")")
+        else
+            block+=("R${US}PATCHED$US$pkg$US$have$US$fixed${US}nothing")
+        fi
+    done < <(jq -r --arg rel "$RELEASE" '
+        .notices[] | . as $n | ($n.release_packages[$rel] // [])[]
+        | select(.is_source == false)
+        | [$n.id, $n.published[:10], $n.title, .name, .version] | @tsv' "$TMP/usn.json")
+    flush
+    if [ ${#out[@]} -gt 0 ]; then
+        table_start "$USN_FMT" "$USN_COLS"
+        emit_records "${out[@]}"
+        table_end
+    else
+        para "None."
+    fi
+    print_earlier
+}
+
+# --- 3. CVE watchlist -----------------------------------------------------------
+status_text() {   # status description; sets label and detail
+    case $1 in
+        pending)      label="VULNERABLE";   detail="fix in progress${2:+, expected in $2}" ;;
+        needed)       label="VULNERABLE";   detail="no fix released yet" ;;
+        needs-triage) label="NEEDS REVIEW"; detail="Ubuntu has not evaluated this yet" ;;
+        not-affected) label="NOT AFFECTED"; detail="" ;;
+        deferred)     label="DEFERRED";     detail="$2" ;;
+        ignored)      label="IGNORED";      detail="$2" ;;
+        *)            label="NEEDS REVIEW"; detail="$1${2:+ ($2)}" ;;
+    esac
+}
+
+kernel_candidate() {   # newest kernel version apt would install through the meta packages
+    local best="" v p
+    for p in linux-image-virtual linux-image-generic linux-virtual linux-generic; do
+        [ -n "${INST[$p]:-}" ] || continue
+        v=$(apt-cache policy "$p" 2>/dev/null | awk '/Candidate:/{print $2}')
+        [ -n "$v" ] && [ "$v" != "(none)" ] || continue
+        if [ -z "$best" ] || dpkg --compare-versions "$v" gt "$best"; then best=$v; fi
+    done
+    echo "$best"
+}
+
+fix_advice() {   # source package, fixed version, CVE; sets advice, and adds an action if there is one
+    local pkg=$1 fix=$2 cve=$3 cand b
+    if [ "$pkg" = linux ]; then
+        if [ -n "$NEWEST_KERNEL" ] && dpkg --compare-versions "$NEWEST_KERNEL" ge "$fix"; then
+            advice="kernel $NEWEST_KERNEL is installed but not running: reboot (see What to do)"
+            return
+        fi
+        cand=$(kernel_candidate)
+        if [ -n "$cand" ] && dpkg --compare-versions "$cand" ge "$fix"; then
+            advice="apt offers kernel $cand: install it, then reboot (see What to do)"
+            add_action bad "$APT_TEXT" "$APT_CMD"
+            add_action bad "After the upgrade, reboot into kernel $cand, which fixes $cve. Then check that uname -r shows it." "reboot"
+            return
+        fi
+    else
+        for b in "${!UPG[@]}"; do
+            [ "${SRC_OF[$b]:-}" = "$pkg" ] && dpkg --compare-versions "${UPG[$b]}" ge "$fix" || continue
+            advice="apt offers the fix: install it (see What to do)"
+            add_action bad "$APT_TEXT" "$APT_CMD"
+            return
+        done
+    fi
+    advice="nothing to install yet"
+}
+
+section_watchlist() {
+    section "CVE watchlist ($RELEASE)"
+    if [ ! -s "$WATCHLIST" ]; then para "(empty: add CVE IDs to $WATCHLIST)"; return; fi
+    local prev="$STATE/watchlist" cve note pkg st desc key old mark have lp label detail advice any
+    touch "$prev" "$NEWSTATE/watchlist"
+    lp=$(canonical-livepatch status --verbose 2>/dev/null)
+    table_start '      %-14s %-20s %s' "Status|Package|Detail"
+    while read -r cve note; do
+        [[ $cve =~ ^CVE-[0-9]+-[0-9]+$ ]] || continue
+        if ! fetch "$API/cves/$cve.json" "$TMP/cve.json"; then
+            ERRORS+=("could not fetch $cve"); row "ERROR" "$cve" "could not fetch Ubuntu's CVE data"; continue
+        fi
+        group_row "$cve [$(jq -r '.priority // "?"' "$TMP/cve.json")]${note:+ $note}"
+        any=0
+        while IFS=$'\t' read -r pkg st desc; do
+            [ -n "${SRCVER[$pkg]:-}" ] || continue   # source package not installed
+            [ "$st" = "DNE" ] && continue
+            any=1
+            key="$cve $pkg"
+            printf '%s\t%s %s\n' "$key" "$st" "$desc" >>"$NEWSTATE/watchlist"
+            old=$(awk -F'\t' -v k="$key" '$1==k{print $2}' "$prev")
+            mark=""
+            if [ -z "$old" ]; then mark=" (first time listed)"
+            elif [ "$old" != "$st $desc" ]; then mark=" (CHANGED since last report, was: $old)"; N_WATCH_CHANGED=$((N_WATCH_CHANGED + 1)); fi
+            have=${SRCVER[$pkg]}
+            if [ "$st" = released ]; then
+                if dpkg --compare-versions "$have" ge "$desc"; then
+                    label="PATCHED"; detail="you have $have (fixed in $desc)"
+                else
+                    fix_advice "$pkg" "$desc" "$cve"
+                    label="UPDATE NEEDED"; detail="you have $have, fix is $desc: $advice"
+                    N_WATCH_UNPATCHED=$((N_WATCH_UNPATCHED + 1))
+                fi
+            elif [ "$st" = pending ] && [ -n "$desc" ] && dpkg --compare-versions "$have" ge "$desc"; then
+                # Ubuntu names the version that will carry the fix, and it's already here.
+                # It turns PATCHED once Ubuntu publishes the notice and marks it released.
+                label="FIX INSTALLED"
+                detail="you run $have, the version Ubuntu names as the fix; waiting for Ubuntu to confirm it (status: pending). Nothing to do."
+                N_WATCH_AWAITING=$((N_WATCH_AWAITING + 1))
+            else
+                status_text "$st" "$desc"
+                if [ "$label" = VULNERABLE ]; then
+                    N_WATCH_UNPATCHED=$((N_WATCH_UNPATCHED + 1))
+                    if [ -n "$desc" ]; then fix_advice "$pkg" "$desc" "$cve"; else advice="nothing to install yet"; fi
+                    detail="you have $have; $detail: $advice"
+                fi
+            fi
+            row "$label" "$pkg" "$detail$mark"
+        done < <(jq -r --arg rel "$RELEASE" '
+            .packages[] | .name as $p | .statuses[]
+            | select(.release_codename == $rel)
+            | [$p, .status, (.description // "")] | @tsv' "$TMP/cve.json")
+        [ "$any" = 0 ] && row "NOT AFFECTED" "(none)" "no installed package is affected"
+        grep -q "$cve" <<<"$lp" && row "PATCHED" "Livepatch" "fix applied"
+    done < <(grep -vE '^\s*(#|$)' "$WATCHLIST")
+    table_end
+}
+
+# --- 4. Kernel and Livepatch ----------------------------------------------------
+section_kernel() {
+    section "Kernel"
+    table_start '    %-14s %-15s %s' "Status|Check|Detail"
+    local -a reasons=()
+    local newer="" pk lj st fixes
+    if [ -n "$NEWEST_KERNEL" ] && [ -n "$RUNNING_KERNEL" ] && dpkg --compare-versions "$NEWEST_KERNEL" gt "$RUNNING_KERNEL"; then
+        newer=$NEWEST_KERNEL
+        row "REBOOT NEEDED" "Running kernel" "$(uname -r), but kernel $newer is installed and not running yet"
+        reasons+=("start kernel $newer")
+    else
+        row "OK" "Running kernel" "$(uname -r), the newest installed"
+    fi
+    if [ -f /var/run/reboot-required ]; then
+        pk=$(sort -u /var/run/reboot-required.pkgs 2>/dev/null | tr '\n' ' '); pk=${pk% }
+        row "REBOOT NEEDED" "Reboot" "required by ${pk:-an installed update}"
+        reasons+=("finish installing ${pk:-updates}")
+    elif [ -n "$newer" ]; then
+        row "REBOOT NEEDED" "Reboot" "to start kernel $newer"
+    else
+        row "NOT NEEDED" "Reboot" "no installed update is waiting for one"
+    fi
+    if [ ${#reasons[@]} -gt 0 ]; then
+        REBOOT=yes
+        add_action bad "Reboot to $(joinc "${reasons[@]}"). Afterwards, check that uname -r shows the new kernel." "reboot"
+    fi
+    if lj=$(canonical-livepatch status --format json 2>/dev/null); then
+        st=$(jq -r '.Status[0].Livepatch.State // "unknown"' <<<"$lj")
+        fixes=$(jq -r '[.Status[0].Livepatch.Fixes // [] | .[]? | (.Name // .name // tostring)] | join(", ")' <<<"$lj" 2>/dev/null)
+        case $st in
+            applied|nothing-to-apply) row "OK" "Livepatch" "$st${fixes:+; fixes: $fixes}" ;;
+            *) row "NEEDS REVIEW" "Livepatch" "$st${fixes:+; fixes: $fixes}" ;;
+        esac
+    else
+        row "NOT RUNNING" "Livepatch" "canonical-livepatch did not answer"
+    fi
+    table_end
+}
+
+# --- 5. Docker images (docker-scanner) --------------------------------------------
+declare -A P_DIR P_FILE P_UPG P_MAJOR P_DATA P_PULL P_BUILD
+section_docker() {
+    [ -n "$DOCKER_SCANNER_ENV" ] || return 0
+    section "Docker images"
+    local cfg scanner dir safe
+    if [ ! -r "$DOCKER_SCANNER_ENV" ] ||
+        ! cfg=$(set -a; . "$DOCKER_SCANNER_ENV" && printf '%s\x1f%s\x1f%s' "${SCANNER:-}" "${SCAN_DIR:-}" "${SAFE_DAYS:-3}"); then
+        ERRORS+=("could not read docker-scanner settings from $DOCKER_SCANNER_ENV")
+        para "(not checked: could not read $DOCKER_SCANNER_ENV)"
+        return
+    fi
+    IFS=$US read -r scanner dir safe <<<"$cfg"
+    if [ ! -x "$scanner" ] ||
+        ! "$scanner" -dir "$dir" -format json -output "$TMP/docker.json" -safe-days "$safe" >/dev/null 2>"$TMP/docker.err"; then
+        ERRORS+=("docker-scanner failed: $(tail -1 "$TMP/docker.err" 2>/dev/null)")
+        para "(not checked: docker-scanner failed)"
+        return
+    fi
+
+    local -a rows=() okn=()
+    local proj svc ref tag running rec age note nb nbd rbd state health code down major data mism unver latest local_img sec file
+    local name label ver notes d nsec=0
+    while IFS=$US read -r proj svc ref tag running rec age note nb nbd rbd state health code down major data mism unver latest local_img sec file; do
+        ref=${ref#docker.io/}; ref=${ref#library/}
+        name=$proj; [ "$svc" != "$proj" ] && name="$proj / $svc"
+        d=${file%/*}
+        P_DIR[$proj]=$d P_FILE[$proj]=$file
+        # ver is what runs now; set says, for every row, what to put in the compose file
+        notes="" label="OK" ver=${running:-$tag} set="no change"
+        [ "$major" = true ] && major=yes || major=""
+        [ "$data" = false ] && data=""
+        if [ -n "$sec" ]; then
+            label="SECURITY" notes=$sec
+            N_DOCKER_BAD=$((N_DOCKER_BAD + 1)); nsec=$((nsec + 1))
+            add_action bad "Docker $name: security issue: $sec" ""
+        elif [ "$health" = unhealthy ] || [ "$state" = restarting ] || [ "$state" = dead ] ||
+            { [ "$state" = exited ] && [ -n "$code" ] && [ "$code" != 0 ]; }; then
+            label="CONTAINER PROBLEM" notes="container is $state${health:+, $health}${code:+, exit code $code}"
+            N_DOCKER_BAD=$((N_DOCKER_BAD + 1))
+            add_action bad "Docker $name: the container is $state${health:+ ($health)}. Look at its logs." "cd $d && docker compose ps && docker compose logs --tail 50 $svc"
+        elif [ "$latest" = true ]; then
+            label="FLOATING TAG" notes="uses the moving tag $tag" set="pin a version${rec:+ such as $rec} in $file"
+            N_DOCKER_OTHER=$((N_DOCKER_OTHER + 1))
+            add_action warn "Docker $name: pin a version${rec:+ such as $rec} instead of $tag in $file." ""
+        elif [ -n "$rec" ] && [ "$rec" != "$tag" ] && [ "$down" != true ]; then
+            label="UPGRADE" set=$rec
+            notes="$rec is ${age:-of unknown age} old"
+            [ -n "$major" ] && notes+="; major version jump: read the breaking changes" && P_MAJOR[$proj]+="${P_MAJOR[$proj]:+, }$svc"
+            [ -n "$data" ] && notes+="; $data" && P_DATA[$proj]+=" $svc: $data"
+            [ "$nb" = true ] && notes+="; the current tag also has a newer build"
+            P_UPG[$proj]+="${P_UPG[$proj]:+, }$svc from $tag to $rec"
+            N_DOCKER_UPG=$((N_DOCKER_UPG + 1))
+        elif [ -n "$mism" ] && [ "$mism" != false ]; then
+            label="TAG MISMATCH" notes="$file says $tag but the container runs $running, so the next docker compose up -d switches to $tag"
+            set="decide: keep $tag or set $running"
+            N_DOCKER_OTHER=$((N_DOCKER_OTHER + 1))
+            add_action warn "Docker $name: $file says $tag but the container runs $running. Decide which you want before the next docker compose up -d." ""
+        elif [ "$nb" = true ]; then
+            label="NEWER BUILD" notes="same tag, rebuilt ${nbd:-recently}${rbd:+; yours was built $rbd}. Pulling it picks up base-image fixes."
+            set="no change, just pull"
+            if [ "$local_img" = true ]; then P_BUILD[$proj]+="${P_BUILD[$proj]:+ }$svc"; else P_PULL[$proj]+="${P_PULL[$proj]:+ }$svc"; fi
+            N_DOCKER_BUILD=$((N_DOCKER_BUILD + 1))
+        elif [ -n "$unver" ] && [ "$unver" != false ]; then
+            label="NOT VERIFIED" notes=${note:-"the scan could not confirm the status of this image"}
+            [ "$unver" != true ] && notes=$unver
+            N_DOCKER_OTHER=$((N_DOCKER_OTHER + 1))
+        elif [ "$down" = true ]; then
+            label="NO CHANGE" notes="the suggested $rec is older than what runs now ($running): keep it"
+        elif [ -n "$state" ] && [ "$state" != running ]; then
+            label="STOPPED" notes="container is $state"
+        elif [[ $note == *waiting* ]]; then
+            label="WAITING" notes=$(sed -E 's/waiting for -safe-days ([0-9]+)/not recommended until it is \1 days old/' <<<"$note")
+        fi
+        if [ "$label" = OK ]; then okn+=("$name $ver"); else rows+=("R$US$label$US$name$US$ref$US$ver$US$set$US$notes"); fi
+    done < <(jq -r '.images // [] | sort_by(.image.project, .image.service) | .[] | [
+            .image.project // "", .image.service // "",
+            ((.image.registry // "") + "/" + (.image.name // "")), .image.tag // "",
+            (.running_version // .running_resolved_version // ""), .recommended_version // "",
+            .recommended_age // "", .recommendation_note // "",
+            (.newer_build_available // false | tostring), (.newer_build_date // "")[:10],
+            (.running_build_date // "")[:10], .container_state // "", .health // "",
+            (.exit_code // "" | tostring), (.is_downgrade // false | tostring),
+            (.major_version_jump // false | tostring), (.data_upgrade_warning // "" | tostring),
+            (.tag_mismatch // false | tostring), (.unverified // false | tostring),
+            (.uses_latest // false | tostring), (.local_image // false | tostring),
+            ((.security_issues // []) | map(if type == "object"
+                then ((.severity // "") + (if .severity then ": " else "" end) + (.description // .type // tostring)
+                      + (if .suggestion then " (" + .suggestion + ")" else "" end))
+                else tostring end) | join("; ")),
+            .file // ""
+        ] | map(tostring | gsub("[\u001f\n]"; " ")) | join("\u001f")' "$TMP/docker.json")
+
+    local total
+    total=$(jq '.images | length' "$TMP/docker.json")
+    local reported details=""
+    reported=$(jq '.security_count // 0' "$TMP/docker.json")
+    if [ "$reported" -gt "$nsec" ]; then
+        # The JSON has a count but not every issue's details: take the scanner's
+        # own SECURITY section from a text-format run, so the email carries it
+        N_DOCKER_BAD=$((N_DOCKER_BAD + reported - nsec))
+        add_action bad "docker-scanner counts $reported security issue(s) but did not tie them all to an image. Read its security details at the end of the Docker images section." ""
+        if "$scanner" -dir "$dir" -format text -output "$TMP/docker.txt" -safe-days "$safe" >/dev/null 2>>"$TMP/docker.err"; then
+            details=$(awk '/^ *SECURITY *$/{f=1} f' "$TMP/docker.txt")
+            [ -n "$details" ] || details="(docker-scanner's text report has no SECURITY section)"
+        else
+            ERRORS+=("docker-scanner text run failed: $(tail -1 "$TMP/docker.err" 2>/dev/null)")
+            details="(docker-scanner's text run failed, so the details are missing)"
+        fi
+    fi
+    if [ ${#rows[@]} -gt 0 ]; then
+        table_start '    %-17s %-22s %-34s %-15s %-30s %s' "Status|App|Image|Running|Set tag to|Notes"
+        emit_records "${rows[@]}"
+        table_end
+        [ ${#okn[@]} -gt 0 ] && para "Up to date, no change: $(joinc "${okn[@]}")."
+    else
+        para "All $total images are up to date, no change: $(joinc "${okn[@]}")."
+    fi
+    if [ -n "$details" ]; then
+        T ""
+        T "  docker-scanner security details:"
+        T "$details"
+        H "<p style=\"margin:12px 0 4px;font-size:14px;font-weight:600;\">docker-scanner security details</p>"
+        H "<pre style=\"${S_CODE}display:block;padding:8px 10px;white-space:pre-wrap;margin:0 0 12px;\">$(esc "$details")</pre>"
+    fi
+
+    # One action per compose project, since one pull and up -d covers its services
+    local p text
+    while read -r p; do
+        [ -n "$p" ] || continue
+        d=${P_DIR[$p]}
+        if [ -n "${P_UPG[$p]:-}" ]; then
+            text="Docker $p: in ${P_FILE[$p]}, change the image tag for ${P_UPG[$p]}."
+            [ -n "${P_MAJOR[$p]:-}" ] && text+=" Major version jump for ${P_MAJOR[$p]}: read the breaking changes."
+            [ -n "${P_DATA[$p]:-}" ] && text+="${P_DATA[$p]}"
+            [ -n "${P_PULL[$p]:-}" ] && text+=" The pull also picks up the newer build of ${P_PULL[$p]// /, }."
+            text+=" Back up first, and read the release notes for each version you move past."
+            add_action warn "$text" "cd $d && docker compose pull && docker compose up -d"
+        elif [ -n "${P_PULL[$p]:-}" ]; then
+            add_action warn "Docker $p: pull the newer build of ${P_PULL[$p]// /, } (same tag, newer base image)." \
+                "cd $d && docker compose pull ${P_PULL[$p]} && docker compose up -d ${P_PULL[$p]}"
+        fi
+        if [ -n "${P_BUILD[$p]:-}" ]; then
+            add_action warn "Docker $p: rebuild ${P_BUILD[$p]// /, } on its newer base image." \
+                "cd $d && docker compose build --pull ${P_BUILD[$p]} && docker compose up -d ${P_BUILD[$p]}"
+        fi
+    done < <(printf '%s\n' "${!P_DIR[@]}" | sort)
+}
+
+section_updates
+section_usns
+section_watchlist
+section_kernel
+section_docker
+
+# --- Summary, what to do, and delivery ------------------------------------------
+bad=() warn=()
+[ "$LISTS_BEHIND" -gt 0 ] && bad+=("package lists $LISTS_BEHIND hours behind Ubuntu")
+[ "$N_SEC" -gt 0 ] && bad+=("$N_SEC security update(s)")
+[ "$N_USN_ACTION" -gt 0 ] && bad+=("$N_USN_ACTION package(s) behind a USN")
+[ "$N_WATCH_UNPATCHED" -gt 0 ] && bad+=("$N_WATCH_UNPATCHED watchlist item(s) unpatched")
+[ "$REBOOT" = yes ] && bad+=("reboot needed")
+[ "$N_DOCKER_BAD" -gt 0 ] && bad+=("$N_DOCKER_BAD Docker problem(s)")
+[ ${#ERRORS[@]} -gt 0 ] && bad+=("${#ERRORS[@]} error(s)")
+[ "$N_WATCH_AWAITING" -gt 0 ] && warn+=("$N_WATCH_AWAITING watchlist fix(es) awaiting Ubuntu's confirmation")
+[ "$N_WATCH_CHANGED" -gt 0 ] && warn+=("$N_WATCH_CHANGED watchlist change(s)")
+[ "$N_OTHER" -gt 0 ] && warn+=("$N_OTHER other update(s)")
+[ "$N_DOCKER_UPG" -gt 0 ] && warn+=("$N_DOCKER_UPG Docker upgrade(s)")
+[ "$N_DOCKER_BUILD" -gt 0 ] && warn+=("$N_DOCKER_BUILD Docker newer build(s)")
+[ "$N_DOCKER_OTHER" -gt 0 ] && warn+=("$N_DOCKER_OTHER other Docker item(s) to check")
+summary=("${bad[@]}" "${warn[@]}")
+if [ ${#bad[@]} -gt 0 ]; then STATUS="ATTENTION"
+elif [ ${#warn[@]} -gt 0 ]; then STATUS="WORTH A LOOK"
+else STATUS="ALL CLEAR"; fi
+SUMMARY=$(joinc "${summary[@]}")
+SUBJ="[$HOST] Security report $TODAY: ${SUMMARY:-all clear}"
+
+ordered_actions() {   # most urgent first: kind<US>text<US>command
+    local k a
+    for k in bad warn info; do
+        for a in "${ACTIONS[@]}"; do [ "${a%%"$US"*}" = "$k" ] && printf '%s\n' "$a"; done
+    done
+}
+
+{
+    echo "Security report for $HOST ($TODAY)"
+    echo
+    echo "STATUS: $STATUS${SUMMARY:+: $SUMMARY}"
+    echo "Key: green = fine, yellow = worth a look, red = needs action"
+    echo
+    echo "WHAT TO DO"
+    n=0
+    while IFS=$US read -r k text cmd; do
+        n=$((n + 1))
+        echo "  $n. $text"
+        [ -n "$cmd" ] && echo "       $cmd"
+    done < <(ordered_actions)
+    [ "$n" = 0 ] && echo "  Nothing."
+    if [ ${#ERRORS[@]} -gt 0 ]; then
+        echo
+        echo "ERRORS"
+        printf '  %s\n' "${ERRORS[@]}"
+    fi
+    cat "$TXT"
+    echo
+    echo "--"
+    echo "Generated by /usr/local/sbin/security-report. Watchlist: $WATCHLIST"
+} >"$TMP/body.txt"
+
+render_html() {
+    local k=ok n=0 kind text cmd e
+    [ "$STATUS" = ATTENTION ] && k=bad
+    [ "$STATUS" = "WORTH A LOOK" ] && k=warn
+    echo '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#ffffff;">'
+    echo "<div style=\"${S_FONT}max-width:900px;margin:0 auto;padding:16px;\">"
+    echo "<h1 style=\"font-size:22px;font-weight:600;border-bottom:2px solid #e1e4e8;padding-bottom:8px;margin:0 0 4px;\">Security report for $(esc "$HOST")</h1>"
+    echo "<p style=\"color:#656d76;font-size:13px;margin:0 0 12px;\">$TODAY · green = fine, yellow = worth a look, red = needs action</p>"
+    echo "<div style=\"background:${BG[$k]};border:1px solid ${FG[$k]};border-radius:6px;padding:10px 14px;font-size:15px;\">"
+    echo "<b style=\"color:${FG[$k]};\">$STATUS</b>${SUMMARY:+: $(esc "$SUMMARY")}</div>"
+    echo "<h2 style=\"$S_H2\">What to do</h2>"
+    echo '<ol style="margin:0 0 12px;padding-left:24px;font-size:14px;line-height:1.5;">'
+    while IFS=$US read -r kind text cmd; do
+        n=$((n + 1))
+        echo "<li style=\"margin-bottom:10px;padding-left:8px;border-left:3px solid ${FG[$kind]};\">$(esc "$text")"
+        [ -n "$cmd" ] && echo "<br><code style=\"$S_CODE\">$(esc "$cmd")</code>"
+        echo "</li>"
+    done < <(ordered_actions)
+    echo "</ol>"
+    [ "$n" = 0 ] && echo '<p style="font-size:14px;margin:4px 0 12px;">Nothing.</p>'
+    if [ ${#ERRORS[@]} -gt 0 ]; then
+        echo "<h2 style=\"$S_H2\">Errors</h2><table style=\"$S_TABLE\">"
+        for e in "${ERRORS[@]}"; do
+            echo "<tr style=\"background:${BG[bad]};\"><td style=\"$S_TD\">$(esc "$e")</td></tr>"
+        done
+        echo "</table>"
+    fi
+    cat "$HTM"
+    echo "<p style=\"color:#656d76;font-size:12px;margin-top:24px;\">Generated by /usr/local/sbin/security-report. Watchlist: $(esc "$WATCHLIST")</p>"
+    echo "</div></body></html>"
+}
+
+case $MODE in
+    text) echo "Subject: $SUBJ"; echo; cat "$TMP/body.txt"; exit 0 ;;
+    html) render_html; exit 0 ;;
+esac
+
+BOUNDARY="=_security_report_$$_$(date +%s)"
+{
+    echo "From: Security report <$MAILFROM>"
+    echo "To: $MAILTO"
+    echo "Subject: $SUBJ"
+    echo "MIME-Version: 1.0"
+    echo "Content-Type: multipart/alternative; boundary=\"$BOUNDARY\""
+    echo
+    echo "--$BOUNDARY"
+    echo "Content-Type: text/plain; charset=UTF-8"
+    echo "Content-Transfer-Encoding: 8bit"
+    echo
+    cat "$TMP/body.txt"
+    echo
+    echo "--$BOUNDARY"
+    echo "Content-Type: text/html; charset=UTF-8"
+    echo "Content-Transfer-Encoding: 8bit"
+    echo
+    render_html
+    echo
+    echo "--$BOUNDARY--"
+} | /usr/sbin/sendmail -t -oi || { echo "sendmail failed" >&2; exit 1; }
+
+# Only save state after the report went out, so nothing is marked "seen" unsent
+cp "$NEWSTATE"/* "$STATE"/

@@ -1,0 +1,9 @@
+[Unit]
+Description=Run security-report daily at 8am Mountain time
+
+[Timer]
+OnCalendar=*-*-* 08:00:00 America/Denver
+Persistent=true
+
+[Install]
+WantedBy=timers.target

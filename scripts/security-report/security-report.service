@@ -1,0 +1,8 @@
+[Unit]
+Description=Daily security report (updates, USNs, CVE watchlist, kernel/Livepatch)
+Wants=network-online.target
+After=network-online.target postfix.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/security-report

@@ -77,7 +77,7 @@ go build -o docker-scanner .
 
 - **[Concepts](docs/concepts.md)** — How version detection works, what counts as a pinned tag, the 72-hour rule, supported registries
 - **[Version source overrides](docs/overrides.md)** — Optional override system for images where registry-based detection doesn't work
-- **[Automated scanning with email](docs/automation.md)** — Cron + email setup for daily/weekly reports
+- **[Automated scanning with email](docs/automation.md)** — A daily security email for an Ubuntu server, with docker-scanner covering its Docker images
 - **[Architecture and contributing](docs/architecture.md)** — Project structure, how to add registries, security checks, output formats
 
 ## License
