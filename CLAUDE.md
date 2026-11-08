@@ -15,6 +15,7 @@ go run . -dir <path> -verbose          # Real scan against live registries
 ```
 
 - With no flags the binary prints help. Scan the current directory with `-dir .`.
+- `-version` prints `main.version`, which release builds set with `-ldflags -X main.version=<tag>` (see `docs/architecture.md`). Other builds print `dev`.
 - Tests make no registry or GitHub calls, so confirm changes to live fetching with a real scan.
 - The `docker-scanner` binary and `dist/checksums.txt` are tracked in git, and the build command overwrites the binary. Stage source files by name when committing.
 - `registry.go`, `checker.go`, and some other files are space-indented. Keep reformatting out of unrelated diffs.
