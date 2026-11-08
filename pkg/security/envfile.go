@@ -43,8 +43,8 @@ func (c *EnvFileChecker) Check(filePath string) ([]models.SecurityIssue, error) 
 	    Type:        "missing_envfile",
 	    Severity:    "high",
 	    Description: "Compose file references ${VAR} syntax but no .env file found",
-	    Location:    composeDir,
-	    Suggestion:  "Create a .env file with the required variables",
+	    Location:    filePath, // the whole file, not one service
+	    Suggestion:  "Create a .env file in " + composeDir + " with the required variables",
 	})
     }
 
