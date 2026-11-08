@@ -57,6 +57,7 @@ func checkEntry(entry string, serviceName string, filePath string) []models.Secu
 		),
 		Location:   fmt.Sprintf("%s -> %s", filePath, varName),
 		Suggestion: fmt.Sprintf("Use ${%s} and add to .env file", strings.ToUpper(varName)),
+		Service:    serviceName,
 	    }}
 	}
     }

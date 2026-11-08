@@ -81,18 +81,15 @@ func main() {
 			continue
 		}
 
-		checkers := security.DefaultCheckers()
+		security.CheckImages(security.DefaultCheckers(), images)
 		for i := range images {
 			parser.MarkLocalOnly(&images[i])
 
 			image := images[i].Image
-			// A standalone Dockerfile has no compose file to check, and no container.
+			// A standalone Dockerfile has no container.
 			if image.Service == "" {
 				continue
 			}
-
-			issues := security.RunAll(checkers, images[i].File)
-			images[i].SecurityIssues = append(images[i].SecurityIssues, issues...)
 
 			container := parser.FindContainer(image.ContainerName, image.Project, image.Service, images[i].File)
 			images[i].ContainerState = container.State
