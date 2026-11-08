@@ -73,7 +73,7 @@ These rules live in separate places, so a change to what counts as a version may
 - `parser.FindContainer` picks the container and its state, including `not created`. An empty state means Docker couldn't be asked.
 - `parser.GetRunningVersion` shells out to the `docker` CLI through the `dockerOutput` variable, which tests fake. It returns an empty string when it finds nothing, and usually returns just the compose tag rather than the real version; `registry.ResolveRunning` finds the real one from the version label or digest.
 - `recommender` in `recommend.go` holds the per-image logic, with injected registries, getter, and clock.
-- `ImageInfo`'s JSON tags are public output that users consume with `jq`.
+- `ImageInfo`'s JSON tags are public output that users consume with `jq`. `status` is filled in by `GenerateJSON` from `ClassifyImage`, the same verdict that colours the other reports.
 
 ## Docs
 

@@ -18,6 +18,22 @@ const (
 	StatusUnverified                   // the scan couldn't confirm the status
 )
 
+// String is the status's name in the JSON report and the HTML template.
+func (s ImageStatus) String() string {
+	switch s {
+	case StatusFloating:
+		return "floating"
+	case StatusUpgrade:
+		return "upgrade"
+	case StatusDowngrade:
+		return "downgrade"
+	case StatusUnverified:
+		return "unverified"
+	default:
+		return "good"
+	}
+}
+
 // ClassifyImage returns the status category for color coding.
 func ClassifyImage(r models.ImageInfo) ImageStatus {
 	if r.UsesLatest {

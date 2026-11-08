@@ -31,6 +31,13 @@ func GenerateJSON(results []models.ImageInfo) string {
 
 	floating, upgrades, downgrades, _ := countByStatus(results)
 
+	// A copy, so the caller's results are left as they were
+	images := make([]models.ImageInfo, len(results))
+	for i, r := range results {
+		r.Status = ClassifyImage(r).String()
+		images[i] = r
+	}
+
 	data := jsonReport{
 		Generated:      time.Now().Format(time.RFC3339),
 		ProjectCount:   len(projects),
@@ -42,7 +49,7 @@ func GenerateJSON(results []models.ImageInfo) string {
 		ContainerProblemCount: countContainerProblems(results),
 		NewerBuildCount: countNewerBuilds(results),
 		TagMismatchCount: countTagMismatches(results),
-		Images:         results,
+		Images:         images,
 	}
 
 	out, err := json.MarshalIndent(data, "", "  ")

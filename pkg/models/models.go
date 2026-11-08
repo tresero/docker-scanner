@@ -43,6 +43,7 @@ type ImageInfo struct {
 	LocalImage          string          `json:"local_image,omitempty"`           // The image: name of a service that's built locally
 	DataUpgradeWarning  string          `json:"data_upgrade_warning,omitempty"`  // What upgrading this database takes, when a version it can't simply move to is in play
 	LocalOnly           bool            `json:"local_only,omitempty"`            // Docker holds this image but never pulled it, so no registry can say anything about it
+	Status              string          `json:"status"`                          // good, upgrade, downgrade, floating or unverified: the version verdict that colours the report row. Set by the JSON report.
 	SkipLookup          bool            `json:"-"`                               // The parser found nothing a registry could answer; the note says why
 	NoOwnLayers         bool            `json:"-"`                               // The build adds no layers, so the image keeps its base's date and that date says nothing
 }

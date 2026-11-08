@@ -194,3 +194,5 @@ The HTML report includes a legend, but for reference:
 | 💥 | Major version jump in the recommendation |
 | `not running` | Image defined but no container running |
 | `(age unknown)` | Recommended version exists but release date couldn't be fetched |
+
+In JSON, each image's `status` is the verdict behind its row colour: `good` (✅), `upgrade` (🟡), `floating` (🔴), `unverified` (❓) or `downgrade` (⬇️). A script should read `status` rather than compare `recommended_version` with the tag itself. A tag like `11.4` that already runs the recommended 11.4.13 is `good`, and so is `v2.7.0` against `2.7.0`. The status says nothing about 🚨, 🔄 or 🔀, which have their own fields.
