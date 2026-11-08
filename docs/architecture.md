@@ -111,13 +111,18 @@ go test ./...
 
 ## Cross-compiling for releases
 
+Set `VERSION` to the release tag, so `-version` reports it. A build without `-X main.version` reports `dev`.
+
 ```bash
+VERSION=v0.3.5
+FLAGS="-trimpath -ldflags=-X=main.version=$VERSION"
+export CGO_ENABLED=0
 mkdir -p dist
-GOOS=linux GOARCH=amd64 go build -o dist/docker-scanner-linux-amd64 .
-GOOS=linux GOARCH=arm64 go build -o dist/docker-scanner-linux-arm64 .
-GOOS=darwin GOARCH=arm64 go build -o dist/docker-scanner-darwin-arm64 .
-GOOS=darwin GOARCH=amd64 go build -o dist/docker-scanner-darwin-amd64 .
-GOOS=windows GOARCH=amd64 go build -o dist/docker-scanner-windows-amd64.exe .
+GOOS=linux GOARCH=amd64 go build $FLAGS -o dist/docker-scanner-linux-amd64 .
+GOOS=linux GOARCH=arm64 go build $FLAGS -o dist/docker-scanner-linux-arm64 .
+GOOS=darwin GOARCH=arm64 go build $FLAGS -o dist/docker-scanner-darwin-arm64 .
+GOOS=darwin GOARCH=amd64 go build $FLAGS -o dist/docker-scanner-darwin-amd64 .
+GOOS=windows GOARCH=amd64 go build $FLAGS -o dist/docker-scanner-windows-amd64.exe .
 cd dist && sha256sum docker-scanner-* > checksums.txt && cd ..
 ```
 

@@ -22,10 +22,16 @@ var (
 	verbose       = flag.Bool("verbose", false, "Show detailed scan progress")
 	skipRemote    = flag.Bool("skip-remote", false, "Skip registry version lookups")
 	overridesPath = flag.String("overrides", "", "Path to overrides YAML (default: $XDG_CONFIG_HOME/docker-scanner/overrides.yml, then ~/.config/docker-scanner/overrides.yml, then bundled defaults)")
+	showVersion   = flag.Bool("version", false, "Print the version and exit")
 )
 
 func main() {
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println("docker-scanner " + version)
+		return
+	}
 
 	if *scanDir == "." && flag.NFlag() == 0 {
 		printHelp()

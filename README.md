@@ -60,6 +60,7 @@ go build -o docker-scanner .
 | `-skip-remote` | `false` | Skip registry version lookups |
 | `-overrides` | none | Path to overrides YAML (opt-in, see [docs](docs/overrides.md)) |
 | `-verbose` | `false` | Show detailed scan progress |
+| `-version` | | Print the version and exit. A build from source prints `dev`. |
 
 ## What you get
 
