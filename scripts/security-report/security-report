@@ -527,20 +527,27 @@ section_docker() {
     fi
 
     local -a rows=() okn=()
-    local proj svc ref tag running rec age note nb nbd rbd state health code down major data mism unver latest local_img sec file
-    local name label ver notes d nsec=0
-    while IFS=$US read -r proj svc ref tag running rec age note nb nbd rbd state health code down major data mism unver latest local_img sec file; do
+    local proj svc ref tag running rec age note nb nbd rbd state health code down major data mism unver latest local_img sec filesec file
+    local name label ver notes d
+    while IFS=$US read -r proj svc ref tag running rec age note nb nbd rbd state health code down major data mism unver latest local_img sec filesec file; do
         ref=${ref#docker.io/}; ref=${ref#library/}
         name=$proj; [ "$svc" != "$proj" ] && name="$proj / $svc"
         d=${file%/*}
         P_DIR[$proj]=$d P_FILE[$proj]=$file
+        # An issue about the whole compose file rides on one of its services, but
+        # isn't about that service, so it gets its own row and action
+        if [ -n "$filesec" ]; then
+            rows+=("R${US}SECURITY$US$proj (whole compose file)$US$US$US$US$filesec")
+            N_DOCKER_BAD=$((N_DOCKER_BAD + 1))
+            add_action bad "Docker $proj: security issue in $file: $filesec" ""
+        fi
         # ver is what runs now; set says, for every row, what to put in the compose file
         notes="" label="OK" ver=${running:-$tag} set="no change"
         [ "$major" = true ] && major=yes || major=""
         [ "$data" = false ] && data=""
         if [ -n "$sec" ]; then
             label="SECURITY" notes=$sec
-            N_DOCKER_BAD=$((N_DOCKER_BAD + 1)); nsec=$((nsec + 1))
+            N_DOCKER_BAD=$((N_DOCKER_BAD + 1))
             add_action bad "Docker $name: security issue: $sec" ""
         elif [ "$health" = unhealthy ] || [ "$state" = restarting ] || [ "$state" = dead ] ||
             { [ "$state" = exited ] && [ -n "$code" ] && [ "$code" != 0 ]; }; then
@@ -581,7 +588,15 @@ section_docker() {
             label="WAITING" notes=$(sed -E 's/waiting for -safe-days ([0-9]+)/not recommended until it is \1 days old/' <<<"$note")
         fi
         if [ "$label" = OK ]; then okn+=("$name $ver"); else rows+=("R$US$label$US$name$US$ref$US$ver$US$set$US$notes"); fi
-    done < <(jq -r '.images // [] | sort_by(.image.project, .image.service) | .[] | [
+    done < <(jq -r '
+        def text: if type == "object"
+            then ((.severity // "") + (if .severity then ": " else "" end) + (.description // .type // tostring)
+                  + (if .suggestion then " (" + .suggestion + ")" else "" end))
+            else tostring end;
+        # file-wide: an issue with no service is about the whole compose file
+        def filewide: type == "object" and (.service // "") == "";
+        .images // [] | sort_by(.image.project, .image.service) | .[]
+        | (.image.service // "") as $svc | [
             .image.project // "", .image.service // "",
             ((.image.registry // "") + "/" + (.image.name // "")), .image.tag // "",
             (.running_version // .running_resolved_version // ""), .recommended_version // "",
@@ -592,30 +607,17 @@ section_docker() {
             (.major_version_jump // false | tostring), (.data_upgrade_warning // "" | tostring),
             (.tag_mismatch // false | tostring), (.unverified // false | tostring),
             (.uses_latest // false | tostring), (.local_image // false | tostring),
-            ((.security_issues // []) | map(if type == "object"
-                then ((.severity // "") + (if .severity then ": " else "" end) + (.description // .type // tostring)
-                      + (if .suggestion then " (" + .suggestion + ")" else "" end))
-                else tostring end) | join("; ")),
+            # A service with no image row (no image: line) has its issues on the row
+            # of another service, so name it. No apostrophes: this is in single quotes.
+            ((.security_issues // []) | map(select(filewide | not)
+                | (if type == "object" and .service != $svc then "in service " + .service + ": " else "" end) + text)
+                | join("; ")),
+            ((.security_issues // []) | map(select(filewide) | text) | join("; ")),
             .file // ""
         ] | map(tostring | gsub("[\u001f\n]"; " ")) | join("\u001f")' "$TMP/docker.json")
 
     local total
     total=$(jq '.images | length' "$TMP/docker.json")
-    local reported details=""
-    reported=$(jq '.security_count // 0' "$TMP/docker.json")
-    if [ "$reported" -gt "$nsec" ]; then
-        # The JSON has a count but not every issue's details: take the scanner's
-        # own SECURITY section from a text-format run, so the email carries it
-        N_DOCKER_BAD=$((N_DOCKER_BAD + reported - nsec))
-        add_action bad "docker-scanner counts $reported security issue(s) but did not tie them all to an image. Read its security details at the end of the Docker images section." ""
-        if "$scanner" -dir "$dir" -format text -output "$TMP/docker.txt" -safe-days "$safe" >/dev/null 2>>"$TMP/docker.err"; then
-            details=$(awk '/^ *SECURITY *$/{f=1} f' "$TMP/docker.txt")
-            [ -n "$details" ] || details="(docker-scanner's text report has no SECURITY section)"
-        else
-            ERRORS+=("docker-scanner text run failed: $(tail -1 "$TMP/docker.err" 2>/dev/null)")
-            details="(docker-scanner's text run failed, so the details are missing)"
-        fi
-    fi
     if [ ${#rows[@]} -gt 0 ]; then
         table_start '    %-17s %-22s %-34s %-15s %-30s %s' "Status|App|Image|Running|Set tag to|Notes"
         emit_records "${rows[@]}"
@@ -623,13 +625,6 @@ section_docker() {
         [ ${#okn[@]} -gt 0 ] && para "Up to date, no change: $(joinc "${okn[@]}")."
     else
         para "All $total images are up to date, no change: $(joinc "${okn[@]}")."
-    fi
-    if [ -n "$details" ]; then
-        T ""
-        T "  docker-scanner security details:"
-        T "$details"
-        H "<p style=\"margin:12px 0 4px;font-size:14px;font-weight:600;\">docker-scanner security details</p>"
-        H "<pre style=\"${S_CODE}display:block;padding:8px 10px;white-space:pre-wrap;margin:0 0 12px;\">$(esc "$details")</pre>"
     fi
 
     # One action per compose project, since one pull and up -d covers its services
