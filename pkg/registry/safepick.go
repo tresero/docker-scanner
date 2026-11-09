@@ -427,12 +427,19 @@ func lineName(major, minor int) string {
 }
 
 // MatchOverride finds the registry tag for an upstream override version,
-// holding it to the same pin rules as Pick. Returns "" if no tag qualifies.
-func MatchOverride(versions []models.RegistryVersion, upstreamVersion, currentTag, runningVersion string) (tag string, majorJump bool) {
+// holding it to the same pin rules and safe-days rule as Pick. A tag pushed
+// within safeDays is skipped even when its upstream release is old, because a
+// rebuild is a new image. age is the tag's own age, or "" when the registry
+// gave no date. Returns "" if no tag qualifies.
+func MatchOverride(versions []models.RegistryVersion, upstreamVersion, currentTag, runningVersion string, safeDays int, now time.Time) (tag, age string, majorJump bool) {
 	floor := versionFloor(currentTag, runningVersion)
+	cutoff := now.AddDate(0, 0, -safeDays)
 
 	var fitting []models.RegistryVersion
 	for _, v := range filterVariant(versions, currentTag) {
+		if !v.ReleasedAt.IsZero() && !v.ReleasedAt.Before(cutoff) {
+			continue
+		}
 		if fitsPin(currentTag, v.Tag) && notBelow(v.Tag, floor) {
 			fitting = append(fitting, v)
 		}
@@ -440,9 +447,15 @@ func MatchOverride(versions []models.RegistryVersion, upstreamVersion, currentTa
 
 	tag = MatchDockerTag(fitting, upstreamVersion)
 	if tag == "" {
-		return "", false
+		return "", "", false
 	}
-	return tag, isMajorJump(currentTag, tag)
+	for _, v := range fitting {
+		if v.Tag == tag && !v.ReleasedAt.IsZero() {
+			age = formatAge(now, v.ReleasedAt)
+			break
+		}
+	}
+	return tag, age, isMajorJump(currentTag, tag)
 }
 
 // fitsPin reports whether a tag can be recommended for the pin.

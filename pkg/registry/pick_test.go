@@ -525,7 +525,7 @@ func TestMatchOverride_KeepsPinnedSpelling(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got, _ := MatchOverride(versions, "2.0.0", tt.pin, ""); got != tt.want {
+			if got, _, _ := MatchOverride(versions, "2.0.0", tt.pin, "", 3, time.Now()); got != tt.want {
 				t.Errorf("tag = %q, want %q", got, tt.want)
 			}
 		})
@@ -845,7 +845,7 @@ func TestMatchOverride(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, jump := MatchOverride(versions, tt.upstream, tt.pin, tt.running)
+			got, _, jump := MatchOverride(versions, tt.upstream, tt.pin, tt.running, 3, time.Now())
 			if got != tt.want {
 				t.Errorf("tag = %q, want %q", got, tt.want)
 			}

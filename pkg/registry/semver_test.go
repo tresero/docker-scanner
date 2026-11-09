@@ -192,6 +192,7 @@ func TestMatchDockerTag(t *testing.T) {
 		{Tag: "13.0.1-ubuntu"},
 		{Tag: "12.4.3"},
 		{Tag: "4.0.17.2952-ls309"},
+		{Tag: "1.2.10-ls1"},
 	}
 
 	tests := []struct {
@@ -206,6 +207,9 @@ func TestMatchDockerTag(t *testing.T) {
 		{"v13.0.1+security-01", "13.0.1"},
 		// Substring match (LinuxServer-style)
 		{"v4.0.17.2952", "4.0.17.2952-ls309"},
+		// A substring has to end at a version boundary: 1.2.1 is not 1.2.10
+		{"v1.2.1", ""},
+		{"v2.4.3", ""},
 		// No match
 		{"v99.0.0", ""},
 	}

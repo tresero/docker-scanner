@@ -72,12 +72,36 @@ func MatchDockerTag(versions []models.RegistryVersion, upstreamVersion string) s
     // Pass 2: Docker tag contains the version (e.g., "4.0.17.2952-ls309" contains "4.0.17.2952")
     for _, v := range versions {
 	for _, c := range candidates {
-	    if strings.Contains(v.Tag, c) {
+	    if containsVersion(v.Tag, c) {
 		return v.Tag
 	    }
 	}
     }
 
     return ""
+}
+
+// containsVersion reports whether tag contains version with no digit or dot
+// joined to it on either side, so 1.2.1 is in 1.2.1-ls5 but not in 1.2.10 or 11.2.1.
+func containsVersion(tag, version string) bool {
+    if version == "" {
+	return false
+    }
+    for i := 0; ; {
+	j := strings.Index(tag[i:], version)
+	if j < 0 {
+	    return false
+	}
+	start, end := i+j, i+j+len(version)
+	if !versionJoined(tag, start-1) && !versionJoined(tag, end) {
+	    return true
+	}
+	i = start + 1
+    }
+}
+
+// versionJoined reports whether s[i] would continue a version number.
+func versionJoined(s string, i int) bool {
+    return i >= 0 && i < len(s) && (s[i] == '.' || (s[i] >= '0' && s[i] <= '9'))
 }
 

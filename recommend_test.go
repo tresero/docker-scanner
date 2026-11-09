@@ -401,6 +401,28 @@ func TestRecommend_Override(t *testing.T) {
 	}
 }
 
+// TestRecommend_OverrideHoldsAFreshRebuild keeps safe-days on the override path.
+// The release is years old, but a rebuild of it pushed an hour ago is a new
+// image, so the override recommends the older build and reports that build's age.
+func TestRecommend_OverrideHoldsAFreshRebuild(t *testing.T) {
+	versions := []models.RegistryVersion{
+		{Tag: "4.0.17.2952-ls310", ReleasedAt: testNow.Add(-time.Hour)},
+		{Tag: "4.0.17.2952-ls309", ReleasedAt: testNow.AddDate(0, 0, -10)},
+	}
+	r := overrideRecommender(versions, "lscr.io/linuxserver/sonarr")
+	r.getter = func(string) ([]byte, error) {
+		return []byte(`[{"tag_name":"v4.0.17.2952","published_at":"2020-01-01T00:00:00Z"}]`), nil
+	}
+	info := models.ImageInfo{Image: models.Image{Registry: "lscr.io", Name: "linuxserver/sonarr", Tag: "latest"}, RunningVersion: "4.0.17.2952-ls309"}
+	r.recommend(&info)
+	if info.RecommendedVersion != "4.0.17.2952-ls309" {
+		t.Errorf("RecommendedVersion = %q, want 4.0.17.2952-ls309", info.RecommendedVersion)
+	}
+	if info.RecommendedAge != "1 week" {
+		t.Errorf("RecommendedAge = %q, want the tag's own age, 1 week", info.RecommendedAge)
+	}
+}
+
 // TestRecommend_NeverBelowRunning checks the fields and status the report sees.
 func TestRecommend_NeverBelowRunning(t *testing.T) {
 	yesterday := testNow.AddDate(0, 0, -1)
