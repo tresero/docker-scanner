@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main]
 
+# A newer push to the same branch replaces the run still going, so merging
+# several PRs at once gives one main run instead of one per commit.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -31,13 +37,16 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.22'
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          # The last v1 release, which this action version installs anyway.
+          # golangci-lint v2 needs golangci-lint-action v7 or later and
+          # reports issues v1 doesn't.
+          version: v1.64.8
