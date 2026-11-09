@@ -138,6 +138,8 @@ In JSON, the warning is `data_upgrade_warning`. It doesn't affect the version st
 
 Variables in `image:` are expanded the way Compose does it: `${VAR}`, `$VAR`, `${VAR:-default}`, `${VAR-default}`, `${VAR:?error}` and `${VAR:+alternate}`. Values come from the shell, then from the `.env` file beside the compose file. If a variable has no value, the image shows as not verified (❓), the note names the variable, and no lookup is made.
 
+A shell value in the registry host or image name gets the same ❓ and no lookup, unless the registry is Docker Hub, GHCR or lscr.io. The compose file names the registry, so a project you didn't write could otherwise have the scan send something like `${GITHUB_TOKEN}` to a server it runs. This also covers a shell value that reaches a Dockerfile's `FROM` through `build:` args. Shell values in the tag, and values from `.env`, are looked up as usual.
+
 ### Dockerfiles
 
 A service with a `build:` section is built rather than pulled, so what can go out of date is its base image. The scanner reads the Dockerfile (from the string form of `build:`, the `context` and `dockerfile` keys, or `dockerfile_inline`) and reports the final stage's `FROM`, following stage names and resolving `ARG` defaults and `args:`. The row shows 🏗️, and upgrades say to rebuild, because pulling won't apply.

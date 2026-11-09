@@ -15,6 +15,28 @@ var (
 	bracedVariable = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)(?:(:?[-?+])(.*))?$`)
 )
 
+// shellMark wraps values taken from the shell in a second parse of a reference,
+// so the parsed image shows which parts came from the scanner's own environment.
+const shellMark = "\x00"
+
+// markShell returns shell with each non-empty value wrapped in shellMark, and
+// records the names it answers in used. shell can be nil.
+func markShell(shell LookupEnv, used *[]string) LookupEnv {
+	if shell == nil {
+		return nil
+	}
+	return func(name string) (string, bool) {
+		value, ok := shell(name)
+		if !ok || value == "" {
+			return value, ok
+		}
+		if !containsString(*used, name) {
+			*used = append(*used, name)
+		}
+		return shellMark + value + shellMark, true
+	}
+}
+
 // projectLookup finds variables the way Compose does: the shell first, then the
 // .env file beside the compose file. shell can be nil.
 func projectLookup(composePath string, shell LookupEnv) LookupEnv {

@@ -75,18 +75,25 @@ func parseFile(filePath string, projectName string, lookupEnv LookupEnv) ([]mode
 
 	var results []models.ImageInfo
 	lookup := projectLookup(filePath, lookupEnv)
+	var shellNames []string
+	marked := projectLookup(filePath, markShell(lookupEnv, &shellNames))
 
 	for serviceName, service := range compose.Services {
-		var info models.ImageInfo
+		var info, markedInfo models.ImageInfo
+		shellNames = shellNames[:0]
 		switch {
 		case service.Build != nil:
 			info = parseBuildService(service, filePath, lookup)
+			markedInfo = parseBuildService(service, filePath, marked)
 		case service.Image != "":
 			ref, unresolved := expandVariables(service.Image, lookup)
 			info = imageRefInfo(ref, unresolved)
+			markedRef, _ := expandVariables(service.Image, marked)
+			markedInfo = imageRefInfo(markedRef, nil)
 		default:
 			continue
 		}
+		holdShellValues(&info, markedInfo.Image, shellNames)
 
 		info.File = filePath
 		info.Image.Service = serviceName
@@ -100,6 +107,28 @@ func parseFile(filePath string, projectName string, lookupEnv LookupEnv) ([]mode
 	}
 
 	return results, nil
+}
+
+// fixedRegistries are the hosts pkg/registry reaches at a fixed address
+// whatever the image name, so a value in the name goes nowhere a project picks.
+var fixedRegistries = map[string]bool{"docker.io": true, "ghcr.io": true, "lscr.io": true}
+
+// holdShellValues skips the lookup when the registry host or image name took a
+// value from the scanner's own environment and the host isn't a fixed registry.
+// A scanned project names its own registry, so looking the image up would send
+// that value, such as a token, to whoever runs the registry. marked is the same
+// reference parsed with shell values wrapped in shellMark, which shows where
+// they landed even when a value's own '/' or ':' moved it out of the tag.
+func holdShellValues(info *models.ImageInfo, marked models.Image, names []string) {
+	if info.SkipLookup || fixedRegistries[info.Image.Registry] {
+		return
+	}
+	if !strings.Contains(marked.Registry, shellMark) && !strings.Contains(marked.Name, shellMark) {
+		return
+	}
+	info.Unverified = true
+	info.SkipLookup = true
+	info.RecommendationNote = "not looked up, since the registry or name uses a shell variable: " + strings.Join(names, ", ")
 }
 
 // imageRefInfo describes an image reference with its variables already expanded.
