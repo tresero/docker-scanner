@@ -49,6 +49,8 @@ go build -o docker-scanner .
 ./docker-scanner -dir ~/docker-projects -safe-days 7
 ```
 
+Point `-dir` only at compose projects you trust, such as your own stacks. The scanner reads every compose file, `.env` and Dockerfile under it, follows symlinks, and contacts whatever registries those files name, so a project written by someone else can steer what it reads and where it connects.
+
 ## Flags
 
 | Flag | Default | Description |
