@@ -3,6 +3,7 @@ package security
 import (
     "os"
     "path/filepath"
+    "strings"
     "testing"
 )
 
@@ -270,6 +271,39 @@ func TestHardcodedSecrets_SwitchValues(t *testing.T) {
 	    }
 	    if len(issues) != tt.wantN {
 		t.Errorf("got %d issues, want %d: %v", len(issues), tt.wantN, issues)
+	    }
+	})
+    }
+}
+
+// TestHardcodedSecrets_NeverEchoesTheValue keeps the secret out of the report.
+// The patterns also match NAME:value and a bare user:pass@ URL, which have no
+// '=' to cut at, so those used to be printed whole.
+func TestHardcodedSecrets_NeverEchoesTheValue(t *testing.T) {
+    tests := []struct {
+	name     string
+	entry    string
+	wantName string
+    }{
+	{name: "colon separator", entry: "DB_PASSWORD:hunter2", wantName: "DB_PASSWORD"},
+	{name: "colon and space", entry: "API_TOKEN: hunter2", wantName: "API_TOKEN"},
+	{name: "bare URL with credentials", entry: "postgres://admin:hunter2@db/app"},
+	{name: "equals still gives the name", entry: "DB_PASSWORD=hunter2", wantName: "DB_PASSWORD"},
+    }
+    for _, tt := range tests {
+	t.Run(tt.name, func(t *testing.T) {
+	    issues := checkEntry(tt.entry, "db", "compose.yml")
+	    if len(issues) != 1 {
+		t.Fatalf("got %d issues, want 1", len(issues))
+	    }
+	    got := issues[0]
+	    for _, field := range []string{got.Location, got.Suggestion, got.Description} {
+		if strings.Contains(strings.ToLower(field), "hunter2") {
+		    t.Errorf("secret value in report field %q", field)
+		}
+	    }
+	    if tt.wantName != "" && got.Location != "compose.yml -> "+tt.wantName {
+		t.Errorf("Location = %q, want compose.yml -> %s", got.Location, tt.wantName)
 	    }
 	})
     }
