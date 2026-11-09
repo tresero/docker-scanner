@@ -275,39 +275,39 @@ func writeSummary(sb *strings.Builder, results []models.ImageInfo) {
 
 	sb.WriteString("  SUMMARY\n")
 	sb.WriteString("  ───────────────────────────────────────\n")
-	sb.WriteString(fmt.Sprintf("  Projects scanned:    %d\n", len(projects)))
-	sb.WriteString(fmt.Sprintf("  Images found:        %d\n", len(results)))
-	sb.WriteString(fmt.Sprintf("  Up to date:          %d", good))
+	fmt.Fprintf(sb, "  Projects scanned:    %d\n", len(projects))
+	fmt.Fprintf(sb, "  Images found:        %d\n", len(results))
+	fmt.Fprintf(sb, "  Up to date:          %d", good)
 	if good == len(results) {
 		sb.WriteString("  ✅")
 	}
 	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf("  Upgrades available:  %d", upgrades))
+	fmt.Fprintf(sb, "  Upgrades available:  %d", upgrades)
 	if upgrades > 0 {
 		sb.WriteString("  🟡")
 	}
 	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf("  Using floating tag:  %d", floating))
+	fmt.Fprintf(sb, "  Using floating tag:  %d", floating)
 	if floating > 0 {
 		sb.WriteString("  🔴")
 	}
 	sb.WriteString("\n")
 	if unverified := countUnverified(results); unverified > 0 {
-		sb.WriteString(fmt.Sprintf("  Not verified:        %d  ❓\n", unverified))
+		fmt.Fprintf(sb, "  Not verified:        %d  ❓\n", unverified)
 	}
 	if downgrades > 0 {
-		sb.WriteString(fmt.Sprintf("  Downgrades:          %d  ⬇️\n", downgrades))
+		fmt.Fprintf(sb, "  Downgrades:          %d  ⬇️\n", downgrades)
 	}
 	if problems := countContainerProblems(results); problems > 0 {
-		sb.WriteString(fmt.Sprintf("  Container problems:  %d  🚨\n", problems))
+		fmt.Fprintf(sb, "  Container problems:  %d  🚨\n", problems)
 	}
 	if builds := countNewerBuilds(results); builds > 0 {
-		sb.WriteString(fmt.Sprintf("  Newer builds:        %d  🔄\n", builds))
+		fmt.Fprintf(sb, "  Newer builds:        %d  🔄\n", builds)
 	}
 	if mismatches := countTagMismatches(results); mismatches > 0 {
-		sb.WriteString(fmt.Sprintf("  Tag mismatches:      %d  🔀\n", mismatches))
+		fmt.Fprintf(sb, "  Tag mismatches:      %d  🔀\n", mismatches)
 	}
-	sb.WriteString(fmt.Sprintf("  Security issues:     %d", securityCount))
+	fmt.Fprintf(sb, "  Security issues:     %d", securityCount)
 	if securityCount > 0 {
 		sb.WriteString("  ⚠️")
 	}
@@ -335,16 +335,16 @@ func writeImageDetails(sb *strings.Builder, results []models.ImageInfo) {
 			status = "✅"
 		}
 
-		sb.WriteString(fmt.Sprintf("\n  %s  %s\n", status, fullImage))
-		sb.WriteString(fmt.Sprintf("      Project:   %s\n", r.Image.Project))
-		sb.WriteString(fmt.Sprintf("      Service:   %s\n", r.Image.Service))
-		sb.WriteString(fmt.Sprintf("      Tag:       %s\n", r.Image.Tag))
+		fmt.Fprintf(sb, "\n  %s  %s\n", status, fullImage)
+		fmt.Fprintf(sb, "      Project:   %s\n", r.Image.Project)
+		fmt.Fprintf(sb, "      Service:   %s\n", r.Image.Service)
+		fmt.Fprintf(sb, "      Tag:       %s\n", r.Image.Tag)
 		version := r.RunningVersion
 		if version == "unknown" {
 			version = "latest (unknown)"
 		}
-		sb.WriteString(fmt.Sprintf("      Running:   %s\n", runningText(r, version)))
-		sb.WriteString(fmt.Sprintf("      File:      %s\n", r.File))
+		fmt.Fprintf(sb, "      Running:   %s\n", runningText(r, version))
+		fmt.Fprintf(sb, "      File:      %s\n", r.File)
 
 		if r.UsesLatest {
 			sb.WriteString("      ⚠️  Uses floating tag — pin to a specific version\n")
@@ -365,31 +365,31 @@ func writeImageDetails(sb *strings.Builder, results []models.ImageInfo) {
 		}
 
 		if r.NewerMajorVersion != "" {
-			sb.WriteString(fmt.Sprintf("      💥 Newer major: %s\n", r.NewerMajorVersion))
+			fmt.Fprintf(sb, "      💥 Newer major: %s\n", r.NewerMajorVersion)
 		}
 
 		if r.DataUpgradeWarning != "" {
-			sb.WriteString(fmt.Sprintf("      🗄️  %s\n", r.DataUpgradeWarning))
+			fmt.Fprintf(sb, "      🗄️  %s\n", r.DataUpgradeWarning)
 		}
 
 		if base := baseImageText(r); base != "" {
-			sb.WriteString(fmt.Sprintf("      🏗️  %s\n", base))
+			fmt.Fprintf(sb, "      🏗️  %s\n", base)
 		}
 
 		if build := newerBuildText(r); build != "" {
-			sb.WriteString(fmt.Sprintf("      🔄 %s\n", build))
+			fmt.Fprintf(sb, "      🔄 %s\n", build)
 		}
 
 		if mismatch := tagMismatchText(r); mismatch != "" {
-			sb.WriteString(fmt.Sprintf("      🔀 %s\n", mismatch))
+			fmt.Fprintf(sb, "      🔀 %s\n", mismatch)
 		}
 
 		if r.RecommendationNote != "" {
-			sb.WriteString(fmt.Sprintf("      Note:      %s\n", r.RecommendationNote))
+			fmt.Fprintf(sb, "      Note:      %s\n", r.RecommendationNote)
 		}
 
 		if len(r.AvailableVersions) > 0 {
-			sb.WriteString(fmt.Sprintf("      Available:  %s\n", strings.Join(r.AvailableVersions, ", ")))
+			fmt.Fprintf(sb, "      Available:  %s\n", strings.Join(r.AvailableVersions, ", "))
 		}
 	}
 
@@ -442,9 +442,9 @@ func writeSecurityIssues(sb *strings.Builder, results []models.ImageInfo) {
 }
 
 func writeIssue(sb *strings.Builder, issue models.SecurityIssue) {
-	sb.WriteString(fmt.Sprintf("    • %s\n", issue.Description))
-	sb.WriteString(fmt.Sprintf("      Location:   %s\n", issue.Location))
-	sb.WriteString(fmt.Sprintf("      Suggestion: %s\n", issue.Suggestion))
+	fmt.Fprintf(sb, "    • %s\n", issue.Description)
+	fmt.Fprintf(sb, "      Location:   %s\n", issue.Location)
+	fmt.Fprintf(sb, "      Suggestion: %s\n", issue.Suggestion)
 }
 
 func filterBySeverity(issues []models.SecurityIssue, severity string) []models.SecurityIssue {

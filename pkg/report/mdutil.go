@@ -20,17 +20,17 @@ func (w *mdWriter) String() string {
 
 // H1 writes a level 1 heading with blank lines around it
 func (w *mdWriter) H1(text string) {
-	w.sb.WriteString(fmt.Sprintf("# %s\n\n", text))
+	fmt.Fprintf(&w.sb, "# %s\n\n", text)
 }
 
 // H2 writes a level 2 heading with blank lines around it
 func (w *mdWriter) H2(text string) {
-	w.sb.WriteString(fmt.Sprintf("## %s\n\n", text))
+	fmt.Fprintf(&w.sb, "## %s\n\n", text)
 }
 
 // H3 writes a level 3 heading with a unique suffix to avoid duplicate heading warnings
 func (w *mdWriter) H3(text string) {
-	w.sb.WriteString(fmt.Sprintf("### %s\n\n", text))
+	fmt.Fprintf(&w.sb, "### %s\n\n", text)
 }
 
 // P writes a paragraph with a trailing blank line
@@ -46,7 +46,7 @@ func (w *mdWriter) HR() {
 // BulletList writes a bullet list with blank lines around it
 func (w *mdWriter) BulletList(items []string) {
 	for _, item := range items {
-		w.sb.WriteString(fmt.Sprintf("- %s\n", item))
+		fmt.Fprintf(&w.sb, "- %s\n", item)
 	}
 	w.sb.WriteString("\n")
 }

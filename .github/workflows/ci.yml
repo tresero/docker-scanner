@@ -44,9 +44,7 @@ jobs:
           go-version: '1.22'
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
-          # The last v1 release, which this action version installs anyway.
-          # golangci-lint v2 needs golangci-lint-action v7 or later and
-          # reports issues v1 doesn't.
-          version: v1.64.8
+          # Pinned so a new linter release can't fail CI on unchanged code.
+          version: v2.15.0

@@ -303,7 +303,7 @@ func httpGetWithAuthFull(url, auth, accept string) ([]byte, http.Header, error) 
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to query registry: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }() // Read-only body: a close error changes nothing
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, nil, fmt.Errorf("registry returned status %d", resp.StatusCode)
