@@ -335,6 +335,31 @@ func TestDropReferencedDockerfiles(t *testing.T) {
 	}
 }
 
+// TestDropReferencedDockerfiles_KeepsOneBuiltInline keeps a folder's Dockerfile
+// when the compose service that points at its folder builds from
+// dockerfile_inline, because that row reports the inline content instead.
+func TestDropReferencedDockerfiles_KeepsOneBuiltInline(t *testing.T) {
+	root := t.TempDir()
+	composePath := filepath.Join(root, "app", "docker-compose.yml")
+	writeFile(t, composePath, "services:\n  app:\n    build:\n      context: ../other\n      dockerfile_inline: \"FROM alpine:3.20\"\n")
+	other := filepath.Join(root, "other", "Dockerfile")
+	writeFile(t, other, "FROM alpine:3.10\n")
+
+	projects := []models.Project{
+		{Name: "app", Path: filepath.Dir(composePath), ComposeFiles: []string{composePath}},
+		{Name: "other", Path: filepath.Dir(other), Dockerfiles: []string{other}},
+	}
+	got := DropReferencedDockerfiles(projects, nil)
+
+	var names []string
+	for _, p := range got {
+		names = append(names, p.Name)
+	}
+	if fmt.Sprint(names) != "[app other]" {
+		t.Errorf("projects = %v, want [app other]", names)
+	}
+}
+
 func TestParseImageRef(t *testing.T) {
 	tests := []struct {
 		ref          string
