@@ -53,6 +53,12 @@ func checkEntry(entry string, serviceName string, filePath string) []models.Secu
     for patternName, pattern := range config.SecretPatterns {
 	if pattern.MatchString(entry) {
 	    varName := extractVarName(entry)
+	    location := fmt.Sprintf("%s -> %s", filePath, varName)
+	    suggestion := fmt.Sprintf("Use ${%s} and add to .env file", strings.ToUpper(varName))
+	    if varName == "" {
+		location = fmt.Sprintf("%s -> URL with credentials", filePath)
+		suggestion = "Move the URL into the .env file and use ${VAR} here"
+	    }
 	    return []models.SecurityIssue{{
 		Type:     "hardcoded_secret",
 		Severity: severity(patternName),
@@ -60,8 +66,8 @@ func checkEntry(entry string, serviceName string, filePath string) []models.Secu
 		    "Service '%s' has hardcoded %s value",
 		    serviceName, patternName,
 		),
-		Location:   fmt.Sprintf("%s -> %s", filePath, varName),
-		Suggestion: fmt.Sprintf("Use ${%s} and add to .env file", strings.ToUpper(varName)),
+		Location:   location,
+		Suggestion: suggestion,
 		Service:    serviceName,
 	    }}
 	}
@@ -80,12 +86,18 @@ func isSwitchValue(value string) bool {
     return false
 }
 
+// extractVarName returns the name an entry sets, never its value. The secret
+// patterns match NAME=value, NAME:value and a bare user:pass@ URL, so it cuts
+// at '=' or ':', and returns "" for a URL, which has no name to show.
 func extractVarName(entry string) string {
-    parts := strings.SplitN(entry, "=", 2)
-    if len(parts) > 0 {
-	return strings.TrimSpace(parts[0])
+    if name, _, ok := strings.Cut(entry, "="); ok {
+	return strings.TrimSpace(name)
     }
-    return entry
+    if strings.Contains(entry, "://") {
+	return ""
+    }
+    name, _, _ := strings.Cut(entry, ":")
+    return strings.TrimSpace(name)
 }
 
 func severity(patternName string) string {
