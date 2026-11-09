@@ -14,7 +14,6 @@ go vet ./...                           # Vet (CI also runs golangci-lint with de
 go run . -dir <path> -verbose          # Real scan against live registries
 ```
 
-- With no flags the binary prints help. Scan the current directory with `-dir .`.
 - `-version` prints `main.version`, which release builds set with `-ldflags -X main.version=<tag>` (see `docs/architecture.md`). Other builds print `dev`.
 - Tests make no registry or GitHub calls, so confirm changes to live fetching with a real scan.
 - The build output `docker-scanner` is gitignored. `dist/checksums.txt` is tracked and holds the latest release's checksums; update it with each release.
@@ -73,11 +72,11 @@ These rules live in separate places, so a change to what counts as a version may
 - `parser.FindContainer` picks the container and its state, including `not created`. An empty state means Docker couldn't be asked.
 - `parser.GetRunningVersion` shells out to the `docker` CLI through the `dockerOutput` variable, which tests fake. It returns an empty string when it finds nothing, and usually returns just the compose tag rather than the real version; `registry.ResolveRunning` finds the real one from the version label or digest.
 - `recommender` in `recommend.go` holds the per-image logic, with injected registries, getter, and clock.
-- `ImageInfo`'s JSON tags are public output that users consume with `jq`. `status` is filled in by `GenerateJSON` from `ClassifyImage`, the same verdict that colours the other reports.
+- `ImageInfo`'s JSON tags are public output read with `jq`, including by `scripts/security-report/security-report`. Add fields; renaming or removing one, or changing what it means, breaks those readers. `status` is filled in by `GenerateJSON` from `ClassifyImage`, the same verdict that colours the other reports.
 
 ## Docs
 
 - `docs/concepts.md`: read when changing tag rules, registry support, security checks, or report symbols, and keep it in sync.
 - `docs/overrides.md`: read when changing the override YAML schema or sources.
 - `docs/architecture.md`: read when adding a registry, checker, or output format, or cutting a release. The interfaces in code are authoritative.
-- `docs/automation.md`: read when changing `scripts/security-report/`. That script reads the JSON report with `jq`, so a JSON change can break it.
+- `scripts/security-report/` is a copy of the script that runs on the servers, where it is maintained. Refresh the copy from a server instead of editing it here.
