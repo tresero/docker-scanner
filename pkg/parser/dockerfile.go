@@ -341,8 +341,10 @@ func composeDockerfiles(composePath string, lookupEnv LookupEnv) []string {
 		if service.Build == nil {
 			continue
 		}
-		if dockerfile := parseBuild(service.Build, composePath, lookup).dockerfile; dockerfile != "" {
-			dockerfiles = append(dockerfiles, dockerfile)
+		// A dockerfile_inline build reports its inline content, not the
+		// Dockerfile in its context, so that file still needs its own row.
+		if config := parseBuild(service.Build, composePath, lookup); config.dockerfile != "" && !config.hasInline {
+			dockerfiles = append(dockerfiles, config.dockerfile)
 		}
 	}
 	return dockerfiles
