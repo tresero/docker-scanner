@@ -161,6 +161,9 @@ func parseBuild(build interface{}, composePath string, lookup LookupEnv) buildCo
 
 	context, contextUnresolved := expandVariables(context, lookup)
 	dockerfile, fileUnresolved := expandVariables(dockerfile, lookup)
+	// Paths are read, not looked up, so drop holdShellValues' marks from them.
+	context = strings.ReplaceAll(context, shellMark, "")
+	dockerfile = strings.ReplaceAll(dockerfile, shellMark, "")
 	if len(contextUnresolved) > 0 || len(fileUnresolved) > 0 || isRemoteContext(context) {
 		return config
 	}

