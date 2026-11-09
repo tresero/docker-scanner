@@ -111,19 +111,13 @@ go test ./...
 
 ## Cross-compiling for releases
 
-Set `VERSION` to the release tag, so `-version` reports it. A build without `-X main.version` reports `dev`.
+Use `scripts/release.sh`, so the binaries, `dist/checksums.txt` and the published assets always match:
 
 ```bash
-VERSION=v0.3.5
-FLAGS="-trimpath -ldflags=-X=main.version=$VERSION"
-export CGO_ENABLED=0
-mkdir -p dist
-GOOS=linux GOARCH=amd64 go build $FLAGS -o dist/docker-scanner-linux-amd64 .
-GOOS=linux GOARCH=arm64 go build $FLAGS -o dist/docker-scanner-linux-arm64 .
-GOOS=darwin GOARCH=arm64 go build $FLAGS -o dist/docker-scanner-darwin-arm64 .
-GOOS=darwin GOARCH=amd64 go build $FLAGS -o dist/docker-scanner-darwin-amd64 .
-GOOS=windows GOARCH=amd64 go build $FLAGS -o dist/docker-scanner-windows-amd64.exe .
-cd dist && sha256sum docker-scanner-* > checksums.txt && cd ..
+scripts/release.sh build v0.3.9      # vet, test, clean build of all 5 binaries, checksums.txt
+git add dist/checksums.txt && git commit -m 'Update dist/checksums.txt to v0.3.9' && git push
+scripts/release.sh publish v0.3.9    # gh release create, then verify
+scripts/release.sh verify v0.3.9     # recheck the published assets at any time
 ```
 
-Then `gh release create` with the binaries attached.
+`build` stops on the first failure. It refuses a dirty tree or an existing tag, and deletes every old binary first, so `checksums.txt` can only describe binaries built from the committed source in that run. It stamps the version with `-X main.version` (a build without it reports `dev`) and checks that the host's binary reports it. `publish` re-checks `dist/` against `checksums.txt`, and refuses if `checksums.txt` isn't committed or commits aren't pushed. It then uploads the binaries and `checksums.txt` and compares every published asset's digest with `checksums.txt`.
