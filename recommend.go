@@ -176,14 +176,17 @@ func (r *recommender) applyOverride(info *models.ImageInfo, override *overrides.
 
 	// Find the matching Docker tag so we recommend something the user can
 	// actually pull. The upstream version may not be packaged yet.
-	dockerTag, majorJump := registry.MatchOverride(versions, rec.Version, info.Image.Tag, running)
+	dockerTag, tagAge, majorJump := registry.MatchOverride(versions, rec.Version, info.Image.Tag, running, r.safeDays, r.now())
 	if dockerTag == "" {
-		r.logf("    Override %s has no matching Docker tag, falling back to registry\n", rec.Version)
+		r.logf("    Override %s has no matching Docker tag older than %d days, falling back to registry\n", rec.Version, r.safeDays)
 		return false
 	}
 
 	info.RecommendedVersion = dockerTag
-	info.RecommendedAge = rec.Age
+	info.RecommendedAge = tagAge
+	if tagAge == "" {
+		info.RecommendedAge = rec.Age
+	}
 	info.MajorVersionJump = majorJump
 	r.logf("    Override %s matched Docker tag %s\n", rec.Version, dockerTag)
 	return true
