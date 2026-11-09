@@ -22,7 +22,7 @@ Grab the latest release from [releases](https://github.com/tresero/docker-scanne
 
 ### From source
 
-Requires Go 1.23 or later.
+Requires Go 1.22 or later.
 
 ```bash
 git clone https://github.com/tresero/docker-scanner.git
