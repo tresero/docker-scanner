@@ -101,7 +101,7 @@ Add a formatter in `pkg/report/` that takes `[]models.ImageInfo` and returns a s
 
 ### Adding a new override source
 
-Add a `Source` constant in `pkg/overrides/overrides.go`, register it in `validSources`, and add a `case` in the `Resolve` switch in `resolve.go`. Add tests for the parser following the existing `parseLatestRelease` pattern.
+Add a `Source` constant in `pkg/overrides/overrides.go`, register it in `validSources`, add it to the `supported:` list in the unknown-source error in `validateOverride`, and add a `case` in the `Resolve` switch in `resolve.go`. Add tests for the parser following the existing `parseLatestRelease` pattern.
 
 ## Testing
 
