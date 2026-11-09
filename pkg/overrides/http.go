@@ -30,7 +30,7 @@ func DefaultGetter() Getter {
 		if err != nil {
 			return nil, fmt.Errorf("GET %s: %w", url, err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }() // Read-only body: a close error changes nothing
 
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("GET %s returned status %d", url, resp.StatusCode)
