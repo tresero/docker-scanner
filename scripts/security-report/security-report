@@ -83,7 +83,7 @@ declare -A FG=([ok]="#1a7f37" [warn]="#9a6700" [bad]="#cf222e" [info]="#57606a")
 S_FONT="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1f2328;"
 S_TABLE="border-collapse:collapse;width:100%;margin-bottom:12px;font-size:14px;"
 S_TH="background:#f6f8fa;border:1px solid #d0d7de;padding:6px 10px;text-align:left;font-weight:600;"
-S_TD="border:1px solid #d0d7de;padding:6px 10px;vertical-align:top;"
+S_TD="border:1px solid #d0d7de;padding:6px 10px;vertical-align:top;word-break:break-word;overflow-wrap:anywhere;"
 S_H2="font-size:18px;font-weight:600;margin:24px 0 8px;color:#24292f;"
 S_CODE="background:#eff1f3;padding:2px 6px;border-radius:3px;font-family:Menlo,Consolas,monospace;font-size:13px;"
 
@@ -105,26 +105,36 @@ kind_of() {   # status label -> ok, warn, bad or info (row color)
 }
 section() { T ""; T "${1^^}"; H "<h2 style=\"$S_H2\">$(esc "$1")</h2>"; }
 para() { T "  $1"; H "<p style=\"margin:4px 0 12px;font-size:14px;\">$(esc "$1")</p>"; }
-table_start() {   # TEXT_FORMAT "Heading|Heading|..."; the first column is always the status
-    TFMT=$1
+table_start() {   # TEXT_FORMAT "Heading|Heading|..." [notes-below]; the first column is always the status
+    # notes-below: in HTML the last column goes on its own full-width line under
+    # each row, so a wide table still fits the page. The text report is unchanged.
+    TFMT=$1 TNOTES=${3:-}
     local -a cols
     local c h="<table style=\"$S_TABLE\"><tr>"
     IFS='|' read -ra cols <<<"$2"
+    [ -n "$TNOTES" ] && unset 'cols[-1]'
     TCOLS=${#cols[@]}
     for c in "${cols[@]}"; do h+="<th style=\"$S_TH\">$(esc "$c")</th>"; done
     H "$h</tr>"
 }
 row() {   # LABEL CELL...
-    local label=$1 k c
+    local label=$1 k c notes="" td=$S_TD n=$TCOLS
     local -a cells=("${@:2}")
-    while [ $((${#cells[@]} + 1)) -lt "$TCOLS" ]; do cells+=(""); done
+    [ -n "$TNOTES" ] && n=$((TCOLS + 1))
+    while [ $((${#cells[@]} + 1)) -lt "$n" ]; do cells+=(""); done
     k=$(kind_of "$label")
     # shellcheck disable=SC2059   # the format is the table's own
     T "$(printf "$TFMT" "$label" "${cells[@]}" | sed 's/ *$//')"
+    if [ -n "$TNOTES" ]; then
+        notes=${cells[-1]}; unset 'cells[-1]'
+        [ -n "$notes" ] && td+="border-bottom:0;"
+    fi
     H "<tr style=\"background:${BG[$k]};\">"
-    H "<td style=\"$S_TD\"><span style=\"color:${FG[$k]};font-weight:600;white-space:nowrap;\">$(esc "$label")</span></td>"
-    for c in "${cells[@]}"; do H "<td style=\"$S_TD\">$(esc "$c")</td>"; done
+    H "<td style=\"$td\"><span style=\"color:${FG[$k]};font-weight:600;white-space:nowrap;\">$(esc "$label")</span></td>"
+    for c in "${cells[@]}"; do H "<td style=\"$td\">$(esc "$c")</td>"; done
     H "</tr>"
+    [ -n "$notes" ] && H "<tr style=\"background:${BG[$k]};\"><td colspan=\"$TCOLS\" style=\"${S_TD}border-top:0;padding-top:0;\">$(esc "$notes")</td></tr>"
+    return 0
 }
 group_row() { T "  $1"; H "<tr><td colspan=\"$TCOLS\" style=\"${S_TD}background:#ffffff;\"><b>$(esc "$1")</b></td></tr>"; }
 table_end() { H "</table>"; }
@@ -633,9 +643,9 @@ section_docker() {
             # OK rows are running, or the scanner gave no state
             if [ "$state" = running ]; then okn+=("$name $ver"); else okn+=("$name $ver (container state unknown)") okrun=""; fi
         else
-            rows+=("R$US$label$US$name$US$ctr$US$ref$US$ver$US$set$US$notes")
+            rows+=("$d${US}R$US$label$US$name$US$ctr$US$ref$US$ver$US$set$US$notes")
         fi
-    done < <(jq -r '.images | sort_by(.image.project, .image.service) | .[] | .image.service as $svc | [
+    done < <(jq -r '.images | sort_by((.file // "" | sub("/[^/]*$"; "") | ascii_downcase), .image.service) | .[] | .image.service as $svc | [
             .image.project // "", .image.service // "",
             ((.image.registry // "") + "/" + (.image.name // "")), .image.tag // "",
             (.running_resolved_version // .running_version // ""), .recommended_version // "",
@@ -662,7 +672,7 @@ section_docker() {
         [ -n "$fsec" ] || continue
         if [ -n "$svc" ]; then name="$proj / $svc" where="Docker $proj / $svc ($file)"
         else name="$proj (whole file)" where="Docker $proj: in $file"; fi
-        rows+=("R${US}SECURITY$US$name$US$US$US${US}no change$US$fsec")
+        rows+=("${file%/*}${US}R${US}SECURITY$US$name$US$US$US${US}no change$US$fsec")
         N_DOCKER_BAD=$((N_DOCKER_BAD + 1))
         add_action bad "$where: security issue: $fsec" ""
     done < <(jq -r '(.images | map({f: .file, s: .image.service})) as $rows
@@ -677,10 +687,15 @@ section_docker() {
 
     local total
     total=$(jq '.images | length' "$TMP/docker.json")
+    # Every row starts with its folder: sort on it so the table runs in folder
+    # order, with each folder's file-wide issues beside its services. -s keeps
+    # the services in the order jq gave them.
+    [ ${#rows[@]} -gt 0 ] && mapfile -t rows < <(printf '%s\n' "${rows[@]}" | LC_ALL=C sort -s -f -t "$US" -k1,1 | cut -d "$US" -f2-)
     if [ ${#rows[@]} -gt 0 ]; then
-        table_start '    %-17s %-22s %-18s %-34s %-15s %-30s %s' "Status|App|Container|Image|Running|Set tag to|Notes"
+        table_start '    %-17s %-22s %-18s %-34s %-15s %-30s %s' "Status|App|Container|Image|Running|Set tag to|Notes" notes-below
         emit_records "${rows[@]}"
         table_end
+        TNOTES=""
         [ ${#okn[@]} -gt 0 ] && para "Up to date${okrun:+ and running}, no change: $(joinc "${okn[@]}")."
     else
         para "All $total images are up to date${okrun:+ and running}, no change: $(joinc "${okn[@]}")."
